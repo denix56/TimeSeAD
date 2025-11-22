@@ -56,3 +56,6 @@ Homepage = "https://github.com/denix56/TimeSeAD"
 
 [tool.hatch.build.targets.wheel]
 packages = ["timesead", "timesead_experiments"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
