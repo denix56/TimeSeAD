@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.20"]
+build-backend = "hatchling.build"
 
 [project]
 name = "TimeSeAD"
@@ -8,6 +8,7 @@ version = "0.0.1"
 description = "TimeSeAD - Library for Benchmarking Multivariate Time Series Anomaly Detection"
 readme = "README.md"
 license = { text = "MIT" }
+requires-python = ">=3.9"
 
 authors = [
   { name = "Dennis Wagner", email = "dwagner@cs.uni-kl.de" },
@@ -34,7 +35,8 @@ dependencies = [
   "torch-geometric",
   "pyreadr",
   "pyod",
-  "einops", "eif @ git+https://github.com/denix56/eif.git",
+  "einops",
+  "eif @ git+https://github.com/denix56/eif.git",
 ]
 
 [project.optional-dependencies]
@@ -50,7 +52,7 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/wagner-d/TimeSeAD"
+Homepage = "https://github.com/denix56/TimeSeAD"
 
-[tool.setuptools]
+[tool.hatch.build.targets.wheel]
 packages = ["timesead", "timesead_experiments"]
