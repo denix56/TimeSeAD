@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "TimeSeAD"
+version = "0.0.1"
+description = "TimeSeAD - Library for Benchmarking Multivariate Time Series Anomaly Detection"
+readme = "README.md"
+license = { text = "MIT" }
+
+authors = [
+  { name = "Dennis Wagner", email = "dwagner@cs.uni-kl.de" },
+  { name = "Tobias Michels", email = "tmichels@cs.uni-kl.de" },
+  { name = "Florian C.F. Schulz", email = "florian.cf.schulz@tu-berlin.de" },
+  { name = "Arjun Nair", email = "naira@rptu.de" },
+]
+
+keywords = [
+  "time series anomaly detection",
+  "anomaly detection",
+  "time series",
+  "benchmark",
+]
+
+dependencies = [
+  "matplotlib>=3.3",
+  "numpy>=1.20",
+  "scikit-learn>=0.24.2",
+  "tqdm>=4.59",
+  "pandas>=1.2",
+  "torch>=1.9.0",
+  "torchvision>=0.2.2",
+  "torch-geometric",
+  "pyreadr",
+  "pyod",
+  "eif",
+  "einops",
+]
+
+[project.optional-dependencies]
+experiments = [
+  "pymongo>=3.12",
+  "sacred>=0.8",
+]
+docs = [
+  "sphinx>=6.1",
+  "sphinx-autoapi>=2.1",
+  "myst-parser>=1.0",
+  "sphinx-rtd-theme",
+]
+
+[project.urls]
+Homepage = "https://github.com/wagner-d/TimeSeAD"
+
+[tool.setuptools]
+packages = ["timesead", "timesead_experiments"]
