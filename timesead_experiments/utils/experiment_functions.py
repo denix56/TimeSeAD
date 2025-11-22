@@ -20,7 +20,7 @@ from timesead.utils.sys_utils import check_path
 
 
 def make_experiment(exp_name: str = None, ingredients: Sequence[Ingredient] = ()) -> Experiment:
-    SETTINGS.DISCOVER_SOURCES = "sys"
+    SETTINGS.DISCOVER_SOURCES = "none"
     SETTINGS.HOST_INFO.INCLUDE_GPU_INFO = not DISABLE_NVIDIA_SMI
 
     if exp_name is None:
