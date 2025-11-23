@@ -167,4 +167,4 @@ def collate_fn(batch_dim: int) -> Callable:
     """
     collate_fn_map = {torch.Tensor: functools.partial(collate_tensor_fn, batch_dim=batch_dim)}
     return functools.partial(collate, collate_fn_map=collate_fn_map)
-    return functools.partial(__default_collate, batch_dim=batch_dim)
+    #return functools.partial(__default_collate, batch_dim=batch_dim)
