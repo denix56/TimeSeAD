@@ -77,56 +77,43 @@ class BaseTSDataset(abc.ABC, Dataset):
         raise NotImplementedError
 
 
-# def __default_collate(batch, batch_dim: int = 0):
-#     elem = batch[0]
-#     elem_type = type(elem)
-#     if isinstance(elem, torch.Tensor):
-#         out = None
-#         if torch.utils.data.get_worker_info() is not None:
-#             # If we're in a background process, concatenate directly into a
-#             # shared memory tensor to avoid an extra copy
-#             numel = sum([x.numel() for x in batch])
-#             storage = elem.storage()._new_shared(numel)
-#             out = elem.new(storage)
-#         return torch.stack(batch, dim=batch_dim, out=out)
-#     elif elem_type.__module__ == 'numpy' and elem_type.__name__ != 'str_' \
-#             and elem_type.__name__ != 'string_':
-#         if elem_type.__name__ == 'ndarray' or elem_type.__name__ == 'memmap':
-#             # array of string classes and object
-#             if np_str_obj_array_pattern.search(elem.dtype.str) is not None:
-#                 raise TypeError(default_collate_err_msg_format.format(elem.dtype))
-#
-#             return __default_collate([torch.as_tensor(b) for b in batch], batch_dim=batch_dim)
-#         elif elem.shape == ():  # scalars
-#             return torch.as_tensor(batch)
-#     elif isinstance(elem, float):
-#         return torch.tensor(batch, dtype=torch.float64)
-#     elif isinstance(elem, int):
-#         return torch.tensor(batch)
-#     elif isinstance(elem, str):
-#         return batch
-#     elif isinstance(elem, collections.abc.Mapping):
-#         return {key: __default_collate([d[key] for d in batch], batch_dim=batch_dim) for key in elem}
-#     elif isinstance(elem, tuple) and hasattr(elem, '_fields'):  # namedtuple
-#         return elem_type(*(__default_collate(samples, batch_dim=batch_dim) for samples in zip(*batch)))
-#     elif isinstance(elem, collections.abc.Sequence):
-#         # check to make sure that the elements in batch have consistent size
-#         it = iter(batch)
-#         elem_size = len(next(it))
-#         if not all(len(elem) == elem_size for elem in it):
-#             raise RuntimeError('each element in list of batch should be of equal size')
-#         transposed = zip(*batch)
-#         return [__default_collate(samples, batch_dim=batch_dim) for samples in transposed]
-#
-#     raise TypeError(default_collate_err_msg_format.format(elem_type))
-
-
 def collate_tensor_fn(
     batch,
     *,
     collate_fn_map: Optional[dict[Union[type, tuple[type, ...]], Callable]] = None,
     batch_dim: int = 0
 ):
+    """
+    Puts each data field into a tensor with outer dimension batch size.
+
+    This is largely copied from PyTorch's
+    :func:`~torch.utils.data._utils.collate_tensor_fn` function, except that it
+    allows stacking :class:`~torch.Tensor`\\s along an arbitrary dimension
+    instead of always using the first dimension.
+
+    Nested tensors and sparse tensors are not supported and will raise a
+    :class:`RuntimeError`. In a DataLoader worker process, the output is
+    allocated in shared memory to avoid an extra copy.
+
+    :param batch: A sequence of tensors to be collated into a single batch
+        tensor. All tensors in the batch must have the same shape.
+    :type batch: Sequence[torch.Tensor]
+    :param collate_fn_map: Unused in this implementation. Present only to match
+        the signature of the higher-level :func:`collate` helper.
+    :type collate_fn_map: Optional[dict[Union[type, tuple[type, ...]], Callable]]
+    :param batch_dim: The index of the dimension along which to stack the
+        elements in the batch. For example, ``batch_dim=0`` produces the usual
+        ``(batch_size, ...)`` layout, while ``batch_dim=-1`` appends the batch
+        dimension as the last dimension.
+    :type batch_dim: int
+
+    :raises RuntimeError: If the input consists of nested tensors or sparse
+        tensors, which are not supported by this function.
+
+    :return: A single batched tensor whose shape is the input tensor shape with
+        an additional batch dimension inserted at ``batch_dim``.
+    :rtype: torch.Tensor
+    """
     elem = batch[0]
     out = None
     if elem.is_nested:
@@ -158,15 +145,35 @@ def collate_tensor_fn(
 
 def collate_fn(batch_dim: int) -> Callable:
     """
-    Puts each data field into a tensor with outer dimension batch size.
+    Factory function that creates a :class:`~torch.utils.data.DataLoader`
+    ``collate_fn`` which stacks tensors along a configurable batch dimension.
 
-    This was largely copied from PyTorch's :func:`~torch.utils.data._utils.default_collate` function except that it
-    allows concatenating :class:`~torch.Tensor`\s along an arbitrary dimension instead of always stacking along the
-    first dimension.
+    The returned callable can be passed directly to
+    :class:`~torch.utils.data.DataLoader` via its ``collate_fn`` argument. It
+    behaves like the default PyTorch collate function, but uses
+    :func:`collate_tensor_fn` to collate tensors, allowing control over where
+    the batch dimension is inserted.
 
-    :param batch_dim: The index of the dimension along which to stack the elements in the batch.
-    :return: Batched tensors where elements have been stacked along the `batch_dim` dimension.
+    Examples
+    --------
+    Use a non-standard batch dimension (e.g., append batch as the last dim):
+
+    .. code-block:: python
+
+        loader = DataLoader(
+            dataset,
+            batch_size=32,
+            collate_fn=collate_fn(batch_dim=-1),
+        )
+
+    :param batch_dim: The dimension along which batched tensors will be
+        stacked. This value is forwarded to :func:`collate_tensor_fn`.
+    :type batch_dim: int
+
+    :return: A collate function suitable for use with
+        :class:`~torch.utils.data.DataLoader`.
+    :rtype: Callable
     """
     collate_fn_map = {torch.Tensor: functools.partial(collate_tensor_fn, batch_dim=batch_dim)}
     return functools.partial(collate, collate_fn_map=collate_fn_map)
-    #return functools.partial(__default_collate, batch_dim=batch_dim)
+
