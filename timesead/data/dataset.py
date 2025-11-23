@@ -150,8 +150,10 @@ def collate_tensor_fn(
         # shared memory tensor to avoid an extra copy
         numel = sum(x.numel() for x in batch)
         storage = elem._typed_storage()._new_shared(numel, device=elem.device)
-        out = elem.new(storage).resize_(len(batch), *list(elem.size()))
-    return torch.stack(batch, dim=batch_dim, out=out).contiguous()
+        shape = list(elem.size())
+        shape.insert(batch_dim, len(batch))
+        out = elem.new(storage).resize_(*shape)
+    return torch.stack(batch, dim=batch_dim, out=out)
 
 
 def collate_fn(batch_dim: int) -> Callable:
