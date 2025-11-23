@@ -1,11 +1,12 @@
 import abc
 import collections.abc
 import functools
-from typing import Tuple, Union, Callable, Any, Dict, List
+from typing import Tuple, Union, Callable, Any, Dict, List, Optional
 
 import torch
 from torch.utils.data import Dataset
-from torch.utils.data._utils.collate import np_str_obj_array_pattern, default_collate_err_msg_format
+#from torch.utils.data._utils.collate import np_str_obj_array_pattern, default_collate_err_msg_format
+from torch.utils.data._utils.collate import collate
 
 
 class BaseTSDataset(abc.ABC, Dataset):
@@ -76,48 +77,81 @@ class BaseTSDataset(abc.ABC, Dataset):
         raise NotImplementedError
 
 
-def __default_collate(batch, batch_dim: int = 0):
+# def __default_collate(batch, batch_dim: int = 0):
+#     elem = batch[0]
+#     elem_type = type(elem)
+#     if isinstance(elem, torch.Tensor):
+#         out = None
+#         if torch.utils.data.get_worker_info() is not None:
+#             # If we're in a background process, concatenate directly into a
+#             # shared memory tensor to avoid an extra copy
+#             numel = sum([x.numel() for x in batch])
+#             storage = elem.storage()._new_shared(numel)
+#             out = elem.new(storage)
+#         return torch.stack(batch, dim=batch_dim, out=out)
+#     elif elem_type.__module__ == 'numpy' and elem_type.__name__ != 'str_' \
+#             and elem_type.__name__ != 'string_':
+#         if elem_type.__name__ == 'ndarray' or elem_type.__name__ == 'memmap':
+#             # array of string classes and object
+#             if np_str_obj_array_pattern.search(elem.dtype.str) is not None:
+#                 raise TypeError(default_collate_err_msg_format.format(elem.dtype))
+#
+#             return __default_collate([torch.as_tensor(b) for b in batch], batch_dim=batch_dim)
+#         elif elem.shape == ():  # scalars
+#             return torch.as_tensor(batch)
+#     elif isinstance(elem, float):
+#         return torch.tensor(batch, dtype=torch.float64)
+#     elif isinstance(elem, int):
+#         return torch.tensor(batch)
+#     elif isinstance(elem, str):
+#         return batch
+#     elif isinstance(elem, collections.abc.Mapping):
+#         return {key: __default_collate([d[key] for d in batch], batch_dim=batch_dim) for key in elem}
+#     elif isinstance(elem, tuple) and hasattr(elem, '_fields'):  # namedtuple
+#         return elem_type(*(__default_collate(samples, batch_dim=batch_dim) for samples in zip(*batch)))
+#     elif isinstance(elem, collections.abc.Sequence):
+#         # check to make sure that the elements in batch have consistent size
+#         it = iter(batch)
+#         elem_size = len(next(it))
+#         if not all(len(elem) == elem_size for elem in it):
+#             raise RuntimeError('each element in list of batch should be of equal size')
+#         transposed = zip(*batch)
+#         return [__default_collate(samples, batch_dim=batch_dim) for samples in transposed]
+#
+#     raise TypeError(default_collate_err_msg_format.format(elem_type))
+
+
+def collate_tensor_fn(
+    batch,
+    *,
+    collate_fn_map: Optional[dict[Union[type, tuple[type, ...]], Callable]] = None,
+    batch_dim: int = 0
+):
     elem = batch[0]
-    elem_type = type(elem)
-    if isinstance(elem, torch.Tensor):
-        out = None
-        if torch.utils.data.get_worker_info() is not None:
-            # If we're in a background process, concatenate directly into a
-            # shared memory tensor to avoid an extra copy
-            numel = sum([x.numel() for x in batch])
-            storage = elem.storage()._new_shared(numel)
-            out = elem.new(storage)
-        return torch.stack(batch, dim=batch_dim, out=out)
-    elif elem_type.__module__ == 'numpy' and elem_type.__name__ != 'str_' \
-            and elem_type.__name__ != 'string_':
-        if elem_type.__name__ == 'ndarray' or elem_type.__name__ == 'memmap':
-            # array of string classes and object
-            if np_str_obj_array_pattern.search(elem.dtype.str) is not None:
-                raise TypeError(default_collate_err_msg_format.format(elem.dtype))
-
-            return __default_collate([torch.as_tensor(b) for b in batch], batch_dim=batch_dim)
-        elif elem.shape == ():  # scalars
-            return torch.as_tensor(batch)
-    elif isinstance(elem, float):
-        return torch.tensor(batch, dtype=torch.float64)
-    elif isinstance(elem, int):
-        return torch.tensor(batch)
-    elif isinstance(elem, str):
-        return batch
-    elif isinstance(elem, collections.abc.Mapping):
-        return {key: __default_collate([d[key] for d in batch], batch_dim=batch_dim) for key in elem}
-    elif isinstance(elem, tuple) and hasattr(elem, '_fields'):  # namedtuple
-        return elem_type(*(__default_collate(samples, batch_dim=batch_dim) for samples in zip(*batch)))
-    elif isinstance(elem, collections.abc.Sequence):
-        # check to make sure that the elements in batch have consistent size
-        it = iter(batch)
-        elem_size = len(next(it))
-        if not all(len(elem) == elem_size for elem in it):
-            raise RuntimeError('each element in list of batch should be of equal size')
-        transposed = zip(*batch)
-        return [__default_collate(samples, batch_dim=batch_dim) for samples in transposed]
-
-    raise TypeError(default_collate_err_msg_format.format(elem_type))
+    out = None
+    if elem.is_nested:
+        raise RuntimeError(
+            "Batches of nested tensors are not currently supported by the default collate_fn; "
+            "please provide a custom collate_fn to handle them appropriately."
+        )
+    if elem.layout in {
+        torch.sparse_coo,
+        torch.sparse_csr,
+        torch.sparse_bsr,
+        torch.sparse_csc,
+        torch.sparse_bsc,
+    }:
+        raise RuntimeError(
+            "Batches of sparse tensors are not currently supported by the default collate_fn; "
+            "please provide a custom collate_fn to handle them appropriately."
+        )
+    if torch.utils.data.get_worker_info() is not None:
+        # If we're in a background process, concatenate directly into a
+        # shared memory tensor to avoid an extra copy
+        numel = sum(x.numel() for x in batch)
+        storage = elem._typed_storage()._new_shared(numel, device=elem.device)
+        out = elem.new(storage).resize_(len(batch), *list(elem.size()))
+    return torch.stack(batch, dim=batch_dim, out=out).contiguous()
 
 
 def collate_fn(batch_dim: int) -> Callable:
@@ -131,4 +165,6 @@ def collate_fn(batch_dim: int) -> Callable:
     :param batch_dim: The index of the dimension along which to stack the elements in the batch.
     :return: Batched tensors where elements have been stacked along the `batch_dim` dimension.
     """
+    collate_fn_map = {torch.Tensor: functools.partial(collate_tensor_fn, batch_dim=batch_dim)}
+    return functools.partial(collate, collate_fn_map=collate_fn_map)
     return functools.partial(__default_collate, batch_dim=batch_dim)
