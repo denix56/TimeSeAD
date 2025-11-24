@@ -1,4 +1,4 @@
-from typing import List, Union, Callable, Tuple
+from typing import List, Union, Callable, Tuple, Sequence
 
 import torch
 from torch.nn import functional as F
@@ -11,8 +11,8 @@ from ...utils.utils import halflife2alpha
 
 
 class LSTMPrediction(BaseModel):
-    def __init__(self, input_dim: int, lstm_hidden_dims: List[int] = [30, 20], linear_hidden_layers: List[int] = [],
-                 linear_activation: Union[Callable, str] = torch.nn.ELU(), prediction_horizon: int = 3):
+    def __init__(self, input_dim: int, lstm_hidden_dims: Sequence[int] = (30, 20), linear_hidden_layers: Sequence[int] = None,
+                 linear_activation: Union[Callable, str] = torch.nn.ELU, prediction_horizon: int = 3):
         """
         LSTM prediction (Malhotra2015)
         :param input_dim:
@@ -24,9 +24,11 @@ class LSTMPrediction(BaseModel):
         super(LSTMPrediction, self).__init__()
 
         self.prediction_horizon = prediction_horizon
+        if linear_hidden_layers is None:
+            linear_hidden_layers = []
 
         self.lstm = RNN('lstm', 's2fh', input_dim, lstm_hidden_dims)
-        self.mlp = MLP(lstm_hidden_dims[-1], linear_hidden_layers, prediction_horizon * input_dim, linear_activation)
+        self.mlp = MLP(lstm_hidden_dims[-1], linear_hidden_layers, prediction_horizon * input_dim, linear_activation())
 
     def forward(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         # x: (T, B, D)
@@ -43,8 +45,8 @@ class LSTMPrediction(BaseModel):
 
 
 class LSTMS2SPrediction(BaseModel):
-    def __init__(self, input_dim: int, lstm_hidden_dims: List[int] = [30, 20], linear_hidden_layers: List[int] = [],
-                 linear_activation: Union[Callable, str] = torch.nn.ELU(), dropout: float = 0.0):
+    def __init__(self, input_dim: int, lstm_hidden_dims: Sequence[int] = (30, 20), linear_hidden_layers: Sequence[int] = None,
+                 linear_activation: Union[Callable, str] = torch.nn.ELU, dropout: float = 0.0):
         """
         LSTM prediction (Filonov2016)
         :param input_dim:
@@ -53,9 +55,11 @@ class LSTMS2SPrediction(BaseModel):
         :param linear_activation:
         """
         super(LSTMS2SPrediction, self).__init__()
+        if linear_hidden_layers is None:
+            linear_hidden_layers = []
 
         self.lstm = RNN('lstm', 's2s', input_dim, lstm_hidden_dims, dropout=dropout)
-        self.mlp = MLP(lstm_hidden_dims[-1], linear_hidden_layers, input_dim, linear_activation)
+        self.mlp = MLP(lstm_hidden_dims[-1], linear_hidden_layers, input_dim, linear_activation())
 
     def forward(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         # x: (T, B, D)
