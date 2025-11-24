@@ -1,8 +1,9 @@
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, Literal
 import numpy as np
 
 import torch
 from eif import iForest
+from treeple import ExtendedIsolationForest
 
 from ..common import AnomalyDetector
 
@@ -10,34 +11,64 @@ class EIFAD(AnomalyDetector):
     def __init__(
         self,
         n_trees: int = 200,
-        sample_size: int = 256,
-        extension_level: Optional[int] = None,
+        sample_size: Union[int, Literal["auto"]] = "auto",
+        contamination: Union[float, Literal["auto"]] = "auto",
+        max_features: Union[int, float] = 1.0,
+        bootstrap: bool = False,
+        feature_combinations: Optional[int] = 2,
+        n_jobs: Optional[int] = None,
         input_shape: str = "btf",
     ) -> None:
-        """
-        Extended Isolation Forest Anomaly Detector
-            An implementation of the Extended Isolation Forest (EIF) for anomaly detection
-            as described in [Hariri2019]_.
+        """"
+        Extended Isolation Forest Anomaly Detector.
 
-            Implementation derived from https://github.com/HPI-Information-Systems/TimeEval-algorithms
+        Thin wrapper around :class:`treeple.ExtendedIsolationForest` [Hariri2019]_.
+        All arguments except ``input_shape`` are forwarded directly to
+        ``treeple.ExtendedIsolationForest``; see its documentation for the
+        precise meaning and valid ranges of these parameters.
 
-            .. [Hariri2019] S. Hariri, M. C. Kind and R. J. Brunner,
-                "Extended Isolation Forest,"
-                in IEEE Transactions on Knowledge and Data Engineering, vol. 33, no. 4, pp. 1479-1489,
-                1 April 2021, doi: 10.1109/TKDE.2019.2947676.
+        Implementation derived from
+        https://github.com/HPI-Information-Systems/TimeEval-algorithms
 
-        Args:
-            n_trees[int]: The number of trees in the forest.
-            sample_size[int]: The size of the subsample to be used in creation of each tree. Must be smaller than data size.
-            extension_level[Optional[int]]: Specifies degree of freedom in choosing the hyperplanes for dividing up data. Must be smaller than the dimension n of the dataset.
-                Value of 0 is identical to standard Isolation Forest, and None is equivalent to N-1 or fully extended
+        Parameters
+        ----------
+        n_trees : int, optional
+            Forwarded as ``n_trees``.
+        sample_size : int or {"auto"}, optional
+            Forwarded as ``sample_size``.
+        contamination : float or {"auto"}, optional
+            Forwarded as ``contamination``.
+        max_features : int or float, optional
+            Forwarded as ``max_features``.
+        bootstrap : bool, optional
+            Forwarded as ``bootstrap``.
+        feature_combinations : int, optional
+            Forwarded as ``feature_combinations``.
+        n_jobs : int or None, optional
+            Forwarded as ``n_jobs``.
+        input_shape : str, optional
+            Expected input layout for this detector (e.g. ``"btf"`` for
+            batch × time × features). This is handled by ``EIFAD`` itself
+            and is not passed to ``treeple.ExtendedIsolationForest``.
+
+        References
+        ----------
+        .. [Hariri2019] S. Hariri, M. C. Kind and R. J. Brunner,
+           "Extended Isolation Forest," IEEE Transactions on Knowledge and
+           Data Engineering, vol. 33, no. 4, pp. 1479–1489, 1 April 2021,
+           doi:10.1109/TKDE.2019.2947676.
         """
         super(EIFAD, self).__init__()
 
         self.n_trees = n_trees
         self.sample_size = sample_size
-        self.extension_level = extension_level
+        self.contamination = contamination
+        self.max_features = max_features
+        self.bootstrap = bootstrap
+        self.feature_combinations = feature_combinations
+        self.n_jobs = n_jobs
         self.input_shape = input_shape
+        self.model = None
 
 
     def fit(self, dataset: torch.utils.data.DataLoader) -> None:
@@ -51,12 +82,17 @@ class EIFAD(AnomalyDetector):
             data_full.append(data)
         data_full = torch.cat(data_full)
 
-        data = data_full.cpu().detach().numpy().astype(np.double)
-        extension_level = self.extension_level if self.extension_level != None else data.shape[1]-1
-        self.model = iForest(data,
-                             ntrees=self.n_trees,
-                             sample_size=self.sample_size,
-                             ExtensionLevel=extension_level)
+        data = data_full.cpu().detach().numpy().astype(np.float32)
+
+        self.model = ExtendedIsolationForest(
+            n_estimators=self.n_trees,
+            max_samples=self.sample_size,
+            contamination=self.contamination,
+            max_features=self.max_features,
+            bootstrap=self.bootstrap,
+            feature_combinations=self.feature_combinations,
+            n_jobs=self.n_jobs,
+        ).fit(data)
 
 
     def compute_online_anomaly_score(
@@ -73,12 +109,11 @@ class EIFAD(AnomalyDetector):
         data = batch_input[:, -self.window_size:, :]
         data = data.reshape(data.shape[0], -1)
 
-        # iForest model doesn't seem to work with tensors
-        dtype = data.dtype
-        data = data.cpu().detach().numpy().astype(np.double)
-        scores = torch.tensor(self.model.compute_paths(data))
+        # Convert to numpy
+        data = data.cpu().detach().numpy().astype(np.float32)
+        scores = -torch.tensor(self.model.score_samples(data))
 
-        return scores.to(dtype)
+        return scores
 
     def compute_offline_anomaly_score(
         self, inputs: Tuple[torch.Tensor, ...]

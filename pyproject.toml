@@ -33,11 +33,10 @@ dependencies = [
   "torch>=2.6",
   "torchvision>=0.2.2",
   "torch-geometric",
-  "torch-cluster @ git+https://github.com/rusty1s/pytorch_cluster.git", # Replace with wheel when pytorch 2.9 support is added
   "pyreadr",
   "pyod",
   "einops",
-  "eif @ git+https://github.com/denix56/eif.git",
+  # "treeple", # For now we need to build from source (please refer to README.md)
 ]
 
 [project.optional-dependencies]
