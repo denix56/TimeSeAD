@@ -48,13 +48,13 @@ class FourierBlock(nn.Module):
         B, L, H, E = q.shape
         x = q.permute(0, 2, 3, 1)
         # Compute Fourier coefficients
-        x_ft = torch.fft.rfft(x, dim=-1)
+        x_ft = torch.fft.rfft(x.to(torch.float32), dim=-1)
         # Perform Fourier neural operations
         out_ft = torch.zeros(B, H, E, L // 2 + 1, device=x.device, dtype=torch.cfloat)
         index = self.index[self.index < x_ft.shape[3]]
         out_ft[..., :len(index)] = torch.einsum("bhik,hiok->bhok", x_ft[..., index], self.weights)
         # Return to time domain
-        x = torch.fft.irfft(out_ft, n=x.size(-1))
+        x = torch.fft.irfft(out_ft, n=x.size(-1)).to(x.dtype)
         return (x, None)
 
 
@@ -117,8 +117,8 @@ class FourierCrossAttention(nn.Module):
         # xv = v.permute(0, 2, 3, 1)
 
         # FFT
-        xq_ft = torch.fft.rfft(xq, dim=-1)   # [B, H, E, Lq//2+1]
-        xk_ft = torch.fft.rfft(xk, dim=-1)   # [B, H, E, Lkv//2+1]
+        xq_ft = torch.fft.rfft(xq.to(torch.float32), dim=-1)   # [B, H, E, Lq//2+1]
+        xk_ft = torch.fft.rfft(xk.to(torch.float32), dim=-1)   # [B, H, E, Lkv//2+1]
 
         # clip indices to valid frequency range (like in FourierBlock)
         index_q = self.index_q[self.index_q < xq_ft.shape[3]]
@@ -142,7 +142,7 @@ class FourierCrossAttention(nn.Module):
 
         # linear transform with complex weights
         Mq = index_q.shape[0]
-        weights_c = self.weights[..., :Mq]                  # [H, Ein, Eout, Mq]
+        weights_c = self.weights[..., :Mq]    # [H, Ein, Eout, Mq]
 
         # combine with keys again: [B, H, E, Mq]
         xqkvw = torch.einsum("bhxy,bhey,heox->bhox", xqk_ft, xk_ft_sel, weights_c)
@@ -161,4 +161,4 @@ class FourierCrossAttention(nn.Module):
             n=xq.size(-1),
         )  # [B, H, Eout, L]
 
-        return out, None
+        return out.to(q.dtype), None
