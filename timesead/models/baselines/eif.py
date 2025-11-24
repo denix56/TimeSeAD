@@ -74,10 +74,11 @@ class EIFAD(AnomalyDetector):
         data = data.reshape(data.shape[0], -1)
 
         # iForest model doesn't seem to work with tensors
+        dtype = data.dtype
         data = data.cpu().detach().numpy().astype(np.double)
         scores = torch.tensor(self.model.compute_paths(data))
 
-        return scores
+        return scores.to(dtype)
 
     def compute_offline_anomaly_score(
         self, inputs: Tuple[torch.Tensor, ...]
