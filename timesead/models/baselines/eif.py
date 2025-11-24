@@ -1,4 +1,5 @@
 from typing import Optional, Tuple, Union
+import numpy as np
 
 import torch
 from eif import iForest
@@ -50,7 +51,7 @@ class EIFAD(AnomalyDetector):
             data_full.append(data)
         data_full = torch.cat(data_full)
 
-        data = data_full.cpu().detach().numpy()
+        data = data_full.cpu().detach().numpy().astype(np.double)
         extension_level = self.extension_level if self.extension_level != None else data.shape[1]-1
         self.model = iForest(data,
                              ntrees=self.n_trees,
@@ -73,7 +74,7 @@ class EIFAD(AnomalyDetector):
         data = data.reshape(data.shape[0], -1)
 
         # iForest model doesn't seem to work with tensors
-        data = data.cpu().detach().numpy()
+        data = data.cpu().detach().numpy().astype(np.double)
         scores = torch.tensor(self.model.compute_paths(data))
 
         return scores
