@@ -2,7 +2,6 @@ from typing import Optional, Tuple, Union, Literal
 import numpy as np
 
 import torch
-from eif import iForest
 from treeple import ExtendedIsolationForest
 
 from ..common import AnomalyDetector
