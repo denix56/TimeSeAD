@@ -29,6 +29,7 @@ class RNNVAEGaussianEncoder(torch.nn.Module):
 
         if not self.logvar:
             std_or_logvar = self.softplus(std_or_logvar)
+            std_or_logvar = std_or_logvar.clamp_min(torch.finfo(std_or_logvar.dtype).eps)
 
         return mean, std_or_logvar
 
