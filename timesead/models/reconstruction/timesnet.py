@@ -3,23 +3,22 @@ from typing import Tuple
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.fft
+import torch.nn.functional as F
 
 from ...models import BaseModel
 from ..layers.embed import DataEmbedding
 from ..layers.inception import InceptionBlockV1
 
 
-def FFT_for_Period(x: torch.Tensor, k: int=2) -> Tuple[torch.Tensor, torch.Tensor]:
+def FFT_for_Period(x: torch.Tensor, k: int = 2) -> Tuple[torch.Tensor, torch.Tensor]:
     # [B, T, C]
     xf = torch.fft.rfft(x, dim=1)
     # find period by amplitudes
     frequency_list = abs(xf).mean(0).mean(-1)
     frequency_list[0] = 0
-    _, top_list = torch.topk(frequency_list, k)
-    top_list = top_list.detach().cpu().numpy()
-    period = x.shape[1] // top_list
+    top_list = torch.topk(frequency_list, k).indices
+    period = torch.div(x.shape[1], top_list, rounding_mode='floor')
     return period, abs(xf).mean(-1)[:, top_list]
 
 
@@ -49,19 +48,15 @@ class TimesBlock(nn.Module):
 
         res = []
         for i in range(self.top_k):
-            period = period_list[i]
-            # TODO(AR): check if the padding is necessary
-            # padding
-            if self.seq_len % period != 0:
-                length = ( (self.seq_len // period) + 1) * period
-                padding = torch.zeros([x.shape[0], (length - self.seq_len), x.shape[2]]).to(x.device)
-                out = torch.cat([x, padding], dim=1)
+            period = int(period_list[i]) if isinstance(period_list, torch.Tensor) else period_list[i]
+            padding_length = (-self.seq_len) % period
+            if padding_length:
+                out = F.pad(x, (0, 0, 0, padding_length))
             else:
-                length = self.seq_len
                 out = x
+            length = out.shape[1]
             # reshape
-            out = out.reshape(B, length // period, period,
-                              N).permute(0, 3, 1, 2).contiguous()
+            out = out.reshape(B, length // period, period, N).permute(0, 3, 1, 2).contiguous()
             # 2D conv: from 1d Variation to 2d Variation
             out = self.conv(out)
             # reshape back
@@ -70,8 +65,7 @@ class TimesBlock(nn.Module):
         res = torch.stack(res, dim=-1)
         # adaptive aggregation
         period_weight = F.softmax(period_weight, dim=1)
-        period_weight = period_weight.unsqueeze(
-            1).unsqueeze(1).repeat(1, T, N, 1)
+        period_weight = period_weight.view(period_weight.shape[0], 1, 1, -1)
         res = torch.sum(res * period_weight, -1)
         # residual connection
         res = res + x
@@ -123,11 +117,8 @@ class TimesNet(BaseModel):
         dec_out = self.projection(enc_out)
 
         # De-Normalization from Non-stationary Transformer
-        dec_out = dec_out * \
-                  (stdev[:, 0, :].unsqueeze(1).repeat(
-                      1, self.seq_len, 1))
-        dec_out = dec_out + \
-                  (means[:, 0, :].unsqueeze(1).repeat(
-                      1, self.seq_len, 1))
+        scale = stdev[:, 0, :].unsqueeze(1)
+        bias = means[:, 0, :].unsqueeze(1)
+        dec_out = dec_out * scale + bias
         return dec_out
 

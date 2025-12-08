@@ -77,9 +77,8 @@ class EIFAD(AnomalyDetector):
             data = b_inputs[0]
             batch_size, window_size, n_features = data.shape
             self.window_size = window_size
-            data = data.reshape(batch_size, window_size*n_features)
-            data_full.append(data)
-        data_full = torch.cat(data_full)
+            data_full.append(data.reshape(batch_size, window_size * n_features))
+        data_full = torch.cat(data_full, dim=0)
 
         data = data_full.cpu().detach().numpy().astype(np.float32)
 

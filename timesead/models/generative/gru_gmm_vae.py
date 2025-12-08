@@ -49,6 +49,8 @@ class GRUGMMVAE(BaseModel):
         self.prior_means = torch.nn.Parameter(torch.rand(gmm_components, latent_dim))
         self.prior_std = torch.nn.Parameter(torch.rand(gmm_components, latent_dim))
 
+        self.register_buffer('component_eye', torch.eye(gmm_components))
+
         self.softplus = torch.nn.Softplus()
 
     def get_prior(self, batch_size: int, seq_len: int) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
@@ -74,7 +76,7 @@ class GRUGMMVAE(BaseModel):
         # Get the categorical distribution for the mixture components
         component_logits = self.encoder_component(hidden)
 
-        one_hot_components = torch.eye(self.gmm_components, dtype=x.dtype, device=x.device)
+        one_hot_components = self.component_eye.to(dtype=x.dtype, device=x.device)
         one_hot_expanded = one_hot_components.view(1, 1, self.gmm_components, self.gmm_components).expand(
             T, B, -1, -1
         )

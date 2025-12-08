@@ -86,12 +86,13 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
 
     def fit(self, dataset: torch.utils.data.DataLoader) -> None:
         errors = []
+        device = self.dummy.device
 
         # Compute mean and covariance over the entire validation dataset
         counter = 0
         for b_inputs, b_targets in dataset:
-            b_inputs = tuple(b_inp.to(self.dummy.device) for b_inp in b_inputs)
-            b_targets = tuple(b_tar.to(self.dummy.device) for b_tar in b_targets)
+            b_inputs = tuple(b_inp.to(device) for b_inp in b_inputs)
+            b_targets = tuple(b_tar.to(device) for b_tar in b_targets)
             with torch.no_grad():
                 pred = self.model(b_inputs)
 
