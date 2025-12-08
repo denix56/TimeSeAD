@@ -206,11 +206,12 @@ class LSTMAEAnomalyDetector(AnomalyDetector):
         errors = []
         mean = 0
         total = 0
+        device = torch_utils.get_device(self.model)
 
         # Compute mean and covariance over the entire validation dataset
         for i, (b_inputs, b_targets) in enumerate(dataset):
-            b_inputs = tuple(b_inp.to(torch_utils.get_device(self.model)) for b_inp in b_inputs)
-            b_targets = tuple(b_tar.to(torch_utils.get_device(self.model)) for b_tar in b_targets)
+            b_inputs = tuple(b_inp.to(device) for b_inp in b_inputs)
+            b_targets = tuple(b_tar.to(device) for b_tar in b_targets)
             with torch.no_grad():
                 pred = self.model(b_inputs)
 

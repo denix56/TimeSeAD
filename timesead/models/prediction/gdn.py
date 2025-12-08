@@ -262,6 +262,17 @@ class GDN(BaseModel):
         batch_num, node_num, all_feature = x.shape
         x = x.reshape(-1, all_feature).contiguous()
 
+        node_indices = torch.arange(node_num, device=device)
+        all_embeddings = self.embedding(node_indices)
+        weights_arr = all_embeddings.detach()
+        if weights_arr.device.type == 'cpu':
+            # torch-geometric knn_graph does not support CPU, so we keep the original method as a fallback
+            gated_edge_index = fallback_knn_graph(weights_arr, self.topk)
+        else:
+            gated_edge_index = knn_graph(weights_arr, self.topk, cosine=True)
+
+        self.learned_graph = gated_edge_index[0].view(-1, self.topk)
+
         gcn_outs = []
         for i, edge_index in enumerate(edge_index_sets):
             edge_num = edge_index.shape[1]
@@ -271,22 +282,11 @@ class GDN(BaseModel):
                 self.cache_edge_index_sets[i] = get_batch_edge_index(edge_index, batch_num, node_num).to(device)
 
             batch_edge_index = self.cache_edge_index_sets[i]
-
-            all_embeddings = self.embedding(torch.arange(node_num, device=device))
-
-            weights_arr = all_embeddings.detach().clone()
-            all_embeddings = all_embeddings.repeat(batch_num, 1)
-            if weights_arr.device.type == 'cpu':
-                # torch-geometric knn_graph does not support CPU, so we keep the original method as a fallback
-                gated_edge_index = fallback_knn_graph(weights_arr, self.topk)
-            else:
-                gated_edge_index = knn_graph(weights_arr, self.topk, cosine=True)
-
-            self.learned_graph = gated_edge_index[0].view(-1, self.topk)
+            repeated_embeddings = all_embeddings.repeat(batch_num, 1)
 
             batch_gated_edge_index = get_batch_edge_index(gated_edge_index, batch_num, node_num).to(device)
             gcn_out = self.gnn_layers[i](x, batch_gated_edge_index, node_num=node_num * batch_num,
-                                         embedding=all_embeddings)
+                                         embedding=repeated_embeddings)
 
             gcn_outs.append(gcn_out)
 
