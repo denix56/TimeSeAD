@@ -8,5 +8,4 @@ from .embed import DataEmbedding
 from .conv_block import ConvBlock
 from .autocorrelation import AutoCorrelationLayer, AutoCorrelation
 from .fourier_correlation import FourierBlock, FourierCrossAttention
-from .fourier_correlation_triton import FourierBlockTriton, FourierCrossAttentionTriton
 from .multi_wavelet_correlation import MultiWaveletCross, MultiWaveletTransform
