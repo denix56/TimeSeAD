@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "TimeSeAD"
-version = "0.0.1"
+version = "0.0.2"
 description = "TimeSeAD - Library for Benchmarking Multivariate Time Series Anomaly Detection"
 readme = "README.md"
 license = { text = "MIT" }
