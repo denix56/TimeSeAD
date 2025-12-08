@@ -105,10 +105,10 @@ class THOC(BaseModel):
         device = self.centers[0].device
 
         # Extract first 'num_batches' batches (dl should be shuffled)
-        x_set = ()
+        x_set = []
         for i, ((x,), *_) in enumerate(dl):
             x = x.to(device)
-            x_set += (x,)
+            x_set.append(x)
             if i + 1 == num_batches:
                 break
         x_set = torch.cat(x_set)

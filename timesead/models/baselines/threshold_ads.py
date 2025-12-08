@@ -59,8 +59,8 @@ class Base_ThresholdAD(AnomalyDetector):
         # Calculate scores
         scores = torch.relu(X - self.lower_thresh) + torch.relu(X - self.upper_thresh)
         
-        if self.feature:
-            scores = scores[:,:,self.feature]
+        if self.feature is not None:
+            scores = scores[:, :, self.feature]
         else:
             if self.cum_method == "max":
                 scores = scores.max(dim=-1).values
