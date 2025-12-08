@@ -1,5 +1,8 @@
 # Implementation derived from Time Series Library https://github.com/thuml/Time-Series-Library
 # TODO(AR): Optimize the code
+
+from typing import Tuple, Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -81,7 +84,7 @@ class AutoCorrelation(nn.Module):
         channel = values.shape[2]
         length = values.shape[3]
         # index init
-        init_index = torch.arange(length).unsqueeze(0).unsqueeze(0).unsqueeze(0).repeat(batch, head, channel, 1).to(values.device)
+        init_index = torch.arange(length, device=values.device).view(1, 1, 1, -1).expand(batch, head, channel, -1)
         # find top k
         top_k = int(self.factor * math.log(length))
         weights, delay = torch.topk(corr, top_k, dim=-1)
@@ -96,7 +99,7 @@ class AutoCorrelation(nn.Module):
             delays_agg = delays_agg + pattern * (tmp_corr[..., i].unsqueeze(-1))
         return delays_agg
 
-    def forward(self, queries, keys, values, attn_mask):
+    def forward(self, queries, keys, values, attn_mask) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         B, L, H, E = queries.shape
         _, S, _, D = values.shape
         if L > S:

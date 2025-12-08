@@ -11,7 +11,7 @@ from ..layers.embed import DataEmbedding
 from ..layers.inception import InceptionBlockV1
 
 
-def FFT_for_Period(x: torch.tensor, k: int=2) -> Tuple[torch.tensor, torch.tensor]:
+def FFT_for_Period(x: torch.Tensor, k: int=2) -> Tuple[torch.Tensor, torch.Tensor]:
     # [B, T, C]
     xf = torch.fft.rfft(x, dim=1)
     # find period by amplitudes
@@ -43,7 +43,7 @@ class TimesBlock(nn.Module):
             InceptionBlockV1(d_ff, d_model, num_kernels=num_kernels)
         )
 
-    def forward(self, x: torch.tensor) -> torch.tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, T, N = x.size()
         period_list, period_weight = FFT_for_Period(x, self.top_k)
 
@@ -97,11 +97,11 @@ class TimesNet(BaseModel):
         super(TimesNet, self).__init__()
         # Rename to window_size
         self.seq_len = window_size
-        self.model = nn.ModuleList([TimesBlock(window_size, top_k, d_model, d_ff, num_kernels)
+        self.model = nn.ModuleList([nn.Sequential(TimesBlock(window_size, top_k, d_model, d_ff, num_kernels),
+                                                  nn.LayerNorm(d_model),)
                                     for _ in range(e_layers)])
         self.enc_embedding = DataEmbedding(input_dim, d_model, dropout)
         self.layer = e_layers
-        self.layer_norm = nn.LayerNorm(d_model)
 
         self.projection = nn.Linear(d_model, input_dim, bias=True)
 
@@ -118,8 +118,8 @@ class TimesNet(BaseModel):
         enc_out = self.enc_embedding(x_enc)  # [B,T,C]
         # TimesNet
         for i in range(self.layer):
-            enc_out = self.layer_norm(self.model[i](enc_out))
-        # porject back
+            enc_out = self.model[i](enc_out)
+        # project back
         dec_out = self.projection(enc_out)
 
         # De-Normalization from Non-stationary Transformer
