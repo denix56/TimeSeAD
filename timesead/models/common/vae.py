@@ -59,6 +59,8 @@ class DenseVAEEncoder(torch.nn.Module):
 
         mean, std = mlp_out.tensor_split(2, dim=-1)
         std = self.softplus(std)
+        # Clamp to avoid zero or negative std when using low precision (e.g., bf16)
+        std = std.clamp_min(torch.finfo(std.dtype).eps)
 
         return mean, std
 
@@ -114,7 +116,9 @@ class VAELoss(Loss):
         # with cov = torch.eye(feat_dim).repeat([1,bz,1,1])*std.pow(2).unsqueeze(-1).
         # However setting up a distribution seems to be an unnecessary computational overhead.
         # However, this requires pytorch version > 1.9!!!
-        nll_gauss = F.gaussian_nll_loss(x_dec_mean, y, x_dec_std.pow(2), reduction='none').sum(-1)
+        # Use a minimum variance to keep the loss stable under low-precision dtypes
+        safe_std = x_dec_std.clamp_min(torch.finfo(x_dec_std.dtype).eps)
+        nll_gauss = F.gaussian_nll_loss(x_dec_mean, y, safe_std.pow(2), reduction='none').sum(-1)
         # For pytorch version < 1.9 use:
         # nll_gauss = -torch.distribution.Normal(x_dec_mean, x_dec_std).log_prob(y).sum(-1)
 

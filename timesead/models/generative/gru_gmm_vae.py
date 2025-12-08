@@ -57,6 +57,7 @@ class GRUGMMVAE(BaseModel):
 
         std = self.prior_std.view(1, 1, *self.prior_std.shape)
         std = self.softplus(std)
+        std = std.clamp_min(torch.finfo(std.dtype).eps)
         std = std.expand(seq_len, batch_size, -1, -1)
 
         return mean, std
