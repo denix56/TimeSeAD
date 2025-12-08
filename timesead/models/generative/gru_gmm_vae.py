@@ -105,8 +105,9 @@ class GMMVAELoss(VAELoss):
         # Computing the KL divergence between a categorical distribution and a uniform prior reduces to computing its
         # negative entropy + constants (log(k))
         cat_dist = torch.distributions.Categorical(logits=component_logits)
-        cat_probs = cat_dist.probs
-        cat_entropy = torch.mean(cat_dist.entropy())
+        # Use float32 accumulation to avoid NaNs under mixed-precision (e.g., bf16) training
+        cat_probs = cat_dist.probs.float()
+        cat_entropy = torch.mean(cat_dist.entropy().float())
 
         # means_z: (T, B, k, latent), means_x: (T, B, k, D)
         T, B, k, D = means_x.shape
@@ -114,7 +115,9 @@ class GMMVAELoss(VAELoss):
             (means_z, stds_z, means_x, stds_x, means_z_prior, stds_z_prior),
             (actual_x.unsqueeze(-2),)
         )
-        loss = -cat_entropy + torch.dot(cat_probs.flatten(), normal_losses.flatten()) / (T * B)
+        normal_losses = normal_losses.float()
+        # Compute expectation with higher precision to keep gradients finite
+        loss = -cat_entropy + (cat_probs * normal_losses).sum() / (T * B)
 
         return loss
 
