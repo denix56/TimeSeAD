@@ -74,26 +74,20 @@ class GRUGMMVAE(BaseModel):
         # Get the categorical distribution for the mixture components
         component_logits = self.encoder_component(hidden)
 
-        # Run the VAE for each component
-        means_z = []
-        stds_z = []
-        means_x = []
-        stds_x = []
-        one_hot = torch.zeros(self.gmm_components, dtype=torch.float, device=x.device)
-        for k in range(self.gmm_components):
-            one_hot[k] = 1
-            mean_z, std_z, mean_x, std_x = self.vae(torch.cat([hidden, one_hot.expand(T, B, -1)], dim=-1))
-            one_hot[k] = 0
+        one_hot_components = torch.eye(self.gmm_components, dtype=x.dtype, device=x.device)
+        one_hot_expanded = one_hot_components.view(1, 1, self.gmm_components, self.gmm_components).expand(
+            T, B, -1, -1
+        )
+        hidden_expanded = hidden.unsqueeze(-2).expand(-1, -1, self.gmm_components, -1)
+        vae_input = torch.cat([hidden_expanded, one_hot_expanded], dim=-1)
+        vae_input = vae_input.reshape(T, B * self.gmm_components, -1)
 
-            means_z.append(mean_z)
-            stds_z.append(std_z)
-            means_x.append(mean_x)
-            stds_x.append(std_x)
+        means_z, stds_z, means_x, stds_x = self.vae(vae_input)
 
-        means_z = torch.stack(means_z, dim=-2)
-        stds_z = torch.stack(stds_z, dim=-2)
-        means_x = torch.stack(means_x, dim=-2)
-        stds_x = torch.stack(stds_x, dim=-2)
+        means_z = means_z.view(T, B, self.gmm_components, -1)
+        stds_z = stds_z.view(T, B, self.gmm_components, -1)
+        means_x = means_x.view(T, B, self.gmm_components, -1)
+        stds_x = stds_x.view(T, B, self.gmm_components, -1)
 
         return means_z, stds_z, means_x, stds_x, means_z_prior, stds_z_prior, component_logits
 
