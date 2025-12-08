@@ -24,6 +24,44 @@ class AutoCorrelation(nn.Module):
         self.output_attention = output_attention
         self.dropout = nn.Dropout(attention_dropout)
 
+    def _delayed_agg(self, tmp_values: torch.Tensor, tmp_corr: torch.Tensor, index: torch.LongTensor, top_k: int) -> torch.Tensor:
+        B, head, channel, length = tmp_values.shape
+        device = tmp_values.device
+        delays_agg = torch.zeros_like(tmp_values, dtype=torch.float)
+
+        # shifts for each top-k index (negative because you use -index[i])
+        shifts = (-index) % length  # (top_k,)
+
+        # Base positions along the last dimension
+        base = torch.arange(length, device=device)  # (length,)
+
+        # For each k, compute circularly shifted indices:
+        # pos[k, j] = (j + shifts[k]) % length
+        pos = (base.unsqueeze(0) + shifts.unsqueeze(1)) % length  # (top_k, length)
+
+        # We want to gather along the last dimension.
+        # Expand shapes to match tmp_values
+        # tmp_values_expanded: (B, head, channel, top_k, length)
+        tmp_values_expanded = tmp_values.unsqueeze(3).expand(B, head, channel, top_k, length)
+
+        # pos_expanded: (B, head, channel, top_k, length)
+        pos_expanded = pos.view(1, 1, 1, top_k, length).expand(B, head, channel, top_k, length)
+
+        # All "rolled" patterns at once: (B, head, channel, top_k, length)
+        rolled = torch.gather(tmp_values_expanded, dim=-1, index=pos_expanded)
+
+        # Broadcast weights from tmp_corr: (B, top_k) -> (B, 1, 1, top_k, 1)
+        weights = tmp_corr.view(B, top_k, 1, 1, 1).permute(0, 2, 3, 1, 4)  # (B, 1, 1, top_k, 1)
+
+        # Multiply and sum over top_k dimension
+        # contrib: (B, head, channel, top_k, length)
+        contrib = rolled * weights
+
+        # Aggregate over top_k
+        delays_agg = contrib.sum(dim=3)  # (B, head, channel, length)
+
+        return delays_agg
+
     def time_delay_agg_training(self, values, corr):
         """
         SpeedUp version of Autocorrelation (a batch-normalization style design)
@@ -33,19 +71,20 @@ class AutoCorrelation(nn.Module):
         channel = values.shape[2]
         length = values.shape[3]
         # find top k
+        # Assuming: corr.shape = (B, ..., L) so that mean_value.shape = (B, L)
+
         top_k = int(self.factor * math.log(length))
-        mean_value = torch.mean(torch.mean(corr, dim=1), dim=1)
-        index = torch.topk(torch.mean(mean_value, dim=0), top_k, dim=-1)[1]
-        weights = torch.stack([mean_value[:, index[i]] for i in range(top_k)], dim=-1)
+        # (B, L)
+        mean_value = corr.mean(dim=(1, 2))
+        # (L,) – scores across batch
+        scores = mean_value.mean(dim=0)
+        # top-k indices along L
+        _, index = torch.topk(scores, k=top_k, dim=0)  # index: (top_k,)
+        # (B, top_k) – gather all columns in one go
         # update corr
-        tmp_corr = torch.softmax(weights, dim=-1)
+        tmp_corr = torch.softmax(mean_value[:, index], dim=-1)
         # aggregation
-        tmp_values = values
-        delays_agg = torch.zeros_like(values).float()
-        for i in range(top_k):
-            pattern = torch.roll(tmp_values, -int(index[i]), -1)
-            delays_agg = delays_agg + pattern * \
-                         (tmp_corr[:, i].unsqueeze(1).unsqueeze(1).unsqueeze(1).repeat(1, head, channel, length))
+        delays_agg = self._delayed_agg(values, tmp_corr, index, top_k)
         return delays_agg
 
     def time_delay_agg_inference(self, values, corr):
@@ -129,8 +168,8 @@ class AutoCorrelation(nn.Module):
 
 
 class AutoCorrelationLayer(nn.Module):
-    def __init__(self, correlation, d_model, n_heads, d_keys=None,
-                 d_values=None):
+    def __init__(self, correlation, d_model: int, n_heads: int, d_keys: Optional[int] = None,
+                 d_values: Optional[int] = None):
         super(AutoCorrelationLayer, self).__init__()
 
         d_keys = d_keys or (d_model // n_heads)

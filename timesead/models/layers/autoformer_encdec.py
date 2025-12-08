@@ -15,26 +15,39 @@ class CustomLayerNorm(nn.Module):
 
     def forward(self, x):
         x_hat = self.layernorm(x)
-        bias = torch.mean(x_hat, dim=1).unsqueeze(1).repeat(1, x.shape[1], 1)
+        bias = torch.mean(x_hat, dim=1, keepdim=True).expand(-1, x.shape[1], -1)
         return x_hat - bias
 
 
 class MovingAvg(nn.Module):
     """
-    Moving average block to highlight the trend of time series
+    Moving average block to highlight the trend of time series.
+    Expects input of shape (batch, length, channels).
     """
 
-    def __init__(self, kernel_size, stride):
-        super(MovingAvg, self).__init__()
+    def __init__(self, kernel_size: int, stride: int):
+        super().__init__()
         self.kernel_size = kernel_size
-        self.avg = nn.AvgPool1d(kernel_size=kernel_size, stride=stride, padding=0)
+        self.stride = stride
+        self.padding = (kernel_size - 1) // 2
 
-    def forward(self, x):
-        # padding on the both ends of time series
-        front = x[:, 0:1, :].repeat(1, (self.kernel_size - 1) // 2, 1)
-        end = x[:, -1:, :].repeat(1, (self.kernel_size - 1) // 2, 1)
-        x = torch.cat([front, x, end], dim=1)
-        x = self.avg(x.permute(0, 2, 1))
+        # AvgPool1d expects (N, C, L)
+        self.avg = nn.AvgPool1d(kernel_size=kernel_size,
+                                stride=stride,
+                                padding=0)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (B, L, C) -> (B, C, L)
+        x = x.permute(0, 2, 1)
+
+        # Efficient border padding instead of repeat+cat
+        # pad = (pad_left, pad_right) for last dim (L)
+        x = F.pad(x, (self.padding, self.padding), mode="replicate")
+
+        # Average pooling along time dimension
+        x = self.avg(x)  # (B, C, L_out)
+
+        # Back to (B, L_out, C)
         x = x.permute(0, 2, 1)
         return x
 
@@ -44,7 +57,7 @@ class SeriesDecomp(nn.Module):
     Series decomposition block
     """
 
-    def __init__(self, kernel_size):
+    def __init__(self, kernel_size: int):
         super(SeriesDecomp, self).__init__()
         self.moving_avg = MovingAvg(kernel_size, stride=1)
 
