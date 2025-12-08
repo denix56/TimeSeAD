@@ -15,11 +15,11 @@ def FFT_for_Period(x: torch.Tensor, k: int = 2) -> Tuple[torch.Tensor, torch.Ten
     # [B, T, C]
     xf = torch.fft.rfft(x, dim=1)
     # find period by amplitudes
-    frequency_list = abs(xf).mean(0).mean(-1)
+    frequency_list = torch.abs(xf).mean(0).mean(-1)
     frequency_list[0] = 0
     top_list = torch.topk(frequency_list, k).indices
     period = torch.div(x.shape[1], top_list, rounding_mode='floor')
-    return period, abs(xf).mean(-1)[:, top_list]
+    return period, torch.abs(xf).mean(-1)[:, top_list]
 
 
 class TimesBlock(nn.Module):
