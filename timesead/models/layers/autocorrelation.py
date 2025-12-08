@@ -2,6 +2,7 @@
 # TODO(AR): Optimize the code
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import math
 
 
@@ -133,20 +134,60 @@ class AutoCorrelationLayer(nn.Module):
         d_values = d_values or (d_model // n_heads)
 
         self.inner_correlation = correlation
-        self.query_projection = nn.Linear(d_model, d_keys * n_heads)
-        self.key_projection = nn.Linear(d_model, d_keys * n_heads)
-        self.value_projection = nn.Linear(d_model, d_values * n_heads)
         self.out_projection = nn.Linear(d_values * n_heads, d_model)
         self.n_heads = n_heads
+
+        self.q_proj_out = d_keys * n_heads
+        self.k_proj_out = d_keys * n_heads
+        self.v_proj_out = d_values * n_heads
+        self.qkv_projection = nn.Linear(d_model, self.q_proj_out + self.k_proj_out + self.v_proj_out)
+
+    def _split_qkv_weights(self):
+        q_end = self.q_proj_out
+        k_end = q_end + self.k_proj_out
+        return (
+            self.qkv_projection.weight[:q_end],
+            self.qkv_projection.weight[q_end:k_end],
+            self.qkv_projection.weight[k_end:],
+        )
+
+    def _split_qkv_biases(self):
+        if self.qkv_projection.bias is None:
+            return None, None, None
+        q_end = self.q_proj_out
+        k_end = q_end + self.k_proj_out
+        return (
+            self.qkv_projection.bias[:q_end],
+            self.qkv_projection.bias[q_end:k_end],
+            self.qkv_projection.bias[k_end:],
+        )
+
+    def _project_shared_qkv(self, tensor):
+        fused = self.qkv_projection(tensor)
+        q_out, k_out, v_out = fused.split(
+            [self.q_proj_out, self.k_proj_out, self.v_proj_out],
+            dim=-1,
+        )
+        return q_out, k_out, v_out
 
     def forward(self, queries, keys, values, attn_mask):
         B, L, _ = queries.shape
         _, S, _ = keys.shape
         H = self.n_heads
 
-        queries = self.query_projection(queries).view(B, L, H, -1)
-        keys = self.key_projection(keys).view(B, S, H, -1)
-        values = self.value_projection(values).view(B, S, H, -1)
+        q_w, k_w, v_w = self._split_qkv_weights()
+        q_b, k_b, v_b = self._split_qkv_biases()
+
+        if queries is keys and queries is values:
+            q_out, k_out, v_out = self._project_shared_qkv(queries)
+        else:
+            q_out = F.linear(queries, q_w, q_b)
+            k_out = F.linear(keys, k_w, k_b)
+            v_out = F.linear(values, v_w, v_b)
+
+        queries = q_out.view(B, L, H, -1)
+        keys = k_out.view(B, S, H, -1)
+        values = v_out.view(B, S, H, -1)
 
         out, attn = self.inner_correlation(
             queries,
