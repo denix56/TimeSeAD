@@ -52,7 +52,7 @@ class TimesBlock(nn.Module):
         for period in periods:
             period_int = int(period)
             padding_length = int(torch.remainder(-self.seq_len, period))
-            padding = torch.zeros((B, padding_length, N), device=x.device, dtype=x.dtype)
+            padding = x.new_zeros((B, padding_length, N))
             out = torch.cat((x, padding), dim=1)
             length = out.shape[1]
             # reshape
