@@ -105,7 +105,7 @@ class TimesNet(BaseModel):
         means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means
         stdev = torch.sqrt(
-            torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + torch.finfo(x_enc.dtype).eps)
+            torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + torch.finfo(x_enc.dtype).eps).detach()
         x_enc /= stdev
 
         # embedding
