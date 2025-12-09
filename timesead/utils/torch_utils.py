@@ -195,9 +195,9 @@ def batched_dot(vec1: torch.Tensor, vec2: torch.Tensor) -> torch.Tensor:
     """
     Computes a batched dot product.
 
-    :param vec1: Tensor of shape (\*, D).
-    :param vec2: Tensor of shape (\*, D). The batch shapes of both inputs must be broadcastable.
-    :return: Tensor of shape (\*)
+    :param vec1: Tensor of shape (*, D).
+    :param vec2: Tensor of shape (*, D). The batch shapes of both inputs must be broadcastable.
+    :return: Tensor of shape (*)
     """
     return torch.matmul(vec1.unsqueeze(-2), vec2.unsqueeze(-1)).squeeze(-1).squeeze(-1)
 
