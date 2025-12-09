@@ -6,6 +6,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+torch._dynamo.config.capture_scalar_outputs = True
 
 
 def get_frequency_modes(seq_len, modes=64, mode_select_method='random'):
