@@ -30,7 +30,6 @@ class MovingAvg(nn.Module):
         self.kernel_size = kernel_size
         self.stride = stride
         self.padding = (kernel_size - 1) // 2
-        self.pad = nn.ReplicationPad1d(self.padding)
 
         # AvgPool1d expects (N, C, L)
         self.avg = nn.AvgPool1d(kernel_size=kernel_size,
@@ -43,7 +42,7 @@ class MovingAvg(nn.Module):
 
         # Efficient border padding instead of repeat+cat
         # pad = (pad_left, pad_right) for last dim (L)
-        x = self.pad(x)
+        x = torch._C._nn.pad(x, (self.padding, self.padding), mode="replicate")
 
         # Average pooling along time dimension
         x = self.avg(x)  # (B, C, L_out)
