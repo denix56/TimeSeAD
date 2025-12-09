@@ -53,6 +53,7 @@ class FourierBlock(nn.Module):
         freq_len = x_ft.size(-1)
         # index is sorted; searchsorted counts how many entries are < freq_len
         valid = torch.searchsorted(self.index, freq_len).item()
+        torch._check_is_size(valid, max=self.index.shape[0])
         index = self.index[:valid]
         # Perform Fourier neural operations
         out_ft = torch.zeros(B, H, E, freq_len, device=x.device, dtype=torch.cfloat)
