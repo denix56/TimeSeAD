@@ -2,6 +2,7 @@ import pytest
 import torch
 
 from timesead.models.reconstruction.fedformer import FEDformer
+from timesead.models.reconstruction.lstm_ae import LSTMAE
 from timesead.models.reconstruction.timesnet import TimesNet
 
 
@@ -11,13 +12,15 @@ def _compile_and_run(model: torch.nn.Module, x: torch.Tensor, backend: str) -> t
         return compiled((x,))
 
 
-def _assert_torch_compile(model_factory) -> None:
+def _assert_torch_compile(model_factory, train: bool = False) -> None:
     x = torch.randn(2, 8, 2)
-    model = model_factory().eval()
+    model = model_factory()
+    model.train(mode=train)
     y = _compile_and_run(model, x, backend="eager")
     assert y.shape == x.shape
 
-    model = model_factory().eval()
+    model = model_factory()
+    model.train(mode=train)
     try:
         y = _compile_and_run(model, x, backend="inductor")
         assert y.shape == x.shape
@@ -50,4 +53,15 @@ def test_fedformer_torch_compile():
             encoder_layers=1,
             modes=4,
         )
+    )
+
+
+def test_lstm_ae_torch_compile():
+    _assert_torch_compile(
+        lambda: LSTMAE(
+            input_dimension=2,
+            hidden_dimensions=[4],
+            latent_pooling="mean",
+        ),
+        train=True,
     )
