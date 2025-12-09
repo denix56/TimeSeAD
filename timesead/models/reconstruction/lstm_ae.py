@@ -74,9 +74,9 @@ class LSTMAEDecoderReverse(LSTMAEDecoder):
         :return: Tensor of shape (T, B, D)
         """
         # Produce the last output
-        hidden = initial_hidden[::-1]
+        hidden = tuple(reversed(initial_hidden))
         output = [self.linear(hidden[-1].unsqueeze(0))]
-        hidden = (hidden, [torch.zeros_like(h) for h in hidden])
+        hidden = (hidden, tuple(torch.zeros_like(h) for h in hidden))
 
         if self.training and x is not None:
             # Use actual time series input instead of predictions
@@ -137,10 +137,10 @@ class LSTMAE(AE, BaseModel):
         else:
             raise ValueError(f'Pooling method "{latent_pooling}" is not supported!')
 
-    def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
+    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         hidden = self.encoder(x)
 
-        return [self.latent_pooling(h) for h in hidden]
+        return tuple(self.latent_pooling(h) for h in hidden)
 
     def forward(self, inputs: Tuple[torch.Tensor]) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
