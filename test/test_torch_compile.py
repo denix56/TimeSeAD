@@ -6,8 +6,10 @@ from timesead.models.reconstruction.lstm_ae import LSTMAE
 from timesead.models.reconstruction.timesnet import TimesNet
 
 
-def _compile_and_run(model: torch.nn.Module, x: torch.Tensor, backend: str) -> torch.Tensor:
-    compiled = torch.compile(model, backend=backend)
+def _compile_and_run(
+    model: torch.nn.Module, x: torch.Tensor, backend: str, *, fullgraph: bool = False
+) -> torch.Tensor:
+    compiled = torch.compile(model, backend=backend, fullgraph=fullgraph)
     with torch.no_grad():
         return compiled((x,))
 
@@ -22,7 +24,7 @@ def _assert_torch_compile(model_factory, train: bool = False) -> None:
     model = model_factory()
     model.train(mode=train)
     try:
-        y = _compile_and_run(model, x, backend="inductor")
+        y = _compile_and_run(model, x, backend="inductor", fullgraph=True)
         assert y.shape == x.shape
     except Exception as exc:
         pytest.xfail(f"torch.compile(backend='inductor') failed: {exc}")

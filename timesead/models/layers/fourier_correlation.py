@@ -34,6 +34,7 @@ class FourierBlock(nn.Module):
         1D Fourier block. It performs representation learning on frequency domain,
         it does FFT, linear transform, and Inverse FFT.
         """
+        self.seq_len = seq_len
         # get modes on frequency domain
         index = get_frequency_modes(seq_len, modes=modes, mode_select_method=mode_select_method)
         self.register_buffer('index', torch.from_numpy(index))
@@ -49,10 +50,15 @@ class FourierBlock(nn.Module):
         x = q.permute(0, 2, 3, 1)
         # Compute Fourier coefficients
         x_ft = torch.fft.rfft(x.to(torch.float32), dim=-1)
+        freq_len = x_ft.size(-1)
+        # index is sorted; searchsorted counts how many entries are < freq_len
+        valid = int(torch.searchsorted(self.index, freq_len).item())
+        index = self.index[:valid]
         # Perform Fourier neural operations
-        out_ft = torch.zeros(B, H, E, L // 2 + 1, device=x.device, dtype=torch.cfloat)
-        index = self.index[self.index < x_ft.shape[3]]
-        out_ft[..., :len(index)] = torch.einsum("bhik,hiok->bhok", x_ft[..., index], self.weights)
+        out_ft = torch.zeros(B, H, E, freq_len, device=x.device, dtype=torch.cfloat)
+        out_ft[..., index] = torch.einsum(
+            "bhik,hiok->bhok", x_ft[..., index], self.weights[..., :valid]
+        )
         # Return to time domain
         x = torch.fft.irfft(out_ft, n=x.size(-1)).to(x.dtype)
         return (x, None)
@@ -77,6 +83,8 @@ class FourierCrossAttention(nn.Module):
         1D Fourier Cross Attention layer. It does FFT, linear transform,
         attention mechanism and Inverse FFT.
         """
+        self.seq_len_q = seq_len_q
+        self.seq_len_kv = seq_len_kv
         self.activation = activation
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -120,9 +128,12 @@ class FourierCrossAttention(nn.Module):
         xq_ft = torch.fft.rfft(xq.to(torch.float32), dim=-1)   # [B, H, E, Lq//2+1]
         xk_ft = torch.fft.rfft(xk.to(torch.float32), dim=-1)   # [B, H, E, Lkv//2+1]
 
-        # clip indices to valid frequency range (like in FourierBlock)
-        index_q = self.index_q[self.index_q < xq_ft.shape[3]]
-        index_kv = self.index_kv[self.index_kv < xk_ft.shape[3]]
+        freq_len_q = xq_ft.size(-1)
+        freq_len_kv = xk_ft.size(-1)
+        valid_q = int(torch.searchsorted(self.index_q, freq_len_q).item())
+        valid_kv = int(torch.searchsorted(self.index_kv, freq_len_kv).item())
+        index_q = self.index_q[:valid_q]
+        index_kv = self.index_kv[:valid_kv]
 
         # select requested modes in one shot (no Python loop)
         xq_ft_sel = xq_ft[..., index_q]      # [B, H, E, Mq]
@@ -141,15 +152,14 @@ class FourierCrossAttention(nn.Module):
             raise Exception(f'{self.activation} activation function is not implemented')
 
         # linear transform with complex weights
-        Mq = index_q.shape[0]
-        weights_c = self.weights[..., :Mq]    # [H, Ein, Eout, Mq]
+        weights_c = self.weights[..., :valid_q]    # [H, Ein, Eout, Mq]
 
         # combine with keys again: [B, H, E, Mq]
         xqkvw = torch.einsum("bhxy,bhey,heox->bhox", xqk_ft, xk_ft_sel, weights_c)
 
         # place selected freqs back into full spectrum
         out_ft = torch.zeros(
-            B, H, self.head_dim_out, xq_ft.shape[3],
+            B, H, self.head_dim_out, freq_len_q,
             device=xq.device,
             dtype=torch.cfloat,
         )
