@@ -14,12 +14,13 @@ from ..layers.inception import InceptionBlockV1
 def FFT_for_Period(x: torch.Tensor, k: int = 2) -> Tuple[torch.Tensor, torch.Tensor]:
     # [B, T, C]
     xf = torch.fft.rfft(x, dim=1)
-    # find period by amplitudes
-    frequency_list = torch.abs(xf).mean(0).mean(-1)
-    frequency_list[0] = 0
-    top_list = torch.topk(frequency_list, k).indices
+    amplitudes = torch.abs(xf)
+    frequency_amplitudes = amplitudes.mean(0).mean(-1)
+    # zero out the zero-frequency component
+    frequency_amplitudes[0] = 0
+    top_list = torch.topk(frequency_amplitudes, k).indices
     period = torch.div(x.shape[1], top_list, rounding_mode='floor')
-    return period, torch.abs(xf).mean(-1)[:, top_list]
+    return period, amplitudes.mean(-1)[:, top_list]
 
 
 class TimesBlock(nn.Module):
@@ -46,17 +47,16 @@ class TimesBlock(nn.Module):
         B, T, N = x.size()
         period_list, period_weight = FFT_for_Period(x, self.top_k)
 
+        periods = period_list.to(torch.int64)
         res = []
-        for i in range(self.top_k):
-            period = int(period_list[i]) if isinstance(period_list, torch.Tensor) else period_list[i]
-            padding_length = (-self.seq_len) % period
-            if padding_length:
-                out = F.pad(x, (0, 0, 0, padding_length))
-            else:
-                out = x
+        for period in periods:
+            period_int = int(period)
+            padding_length = int(torch.remainder(-self.seq_len, period))
+            padding = torch.zeros((B, padding_length, N), device=x.device, dtype=x.dtype)
+            out = torch.cat((x, padding), dim=1)
             length = out.shape[1]
             # reshape
-            out = out.reshape(B, length // period, period, N).permute(0, 3, 1, 2).contiguous()
+            out = out.reshape(B, length // period_int, period_int, N).permute(0, 3, 1, 2).contiguous()
             # 2D conv: from 1d Variation to 2d Variation
             out = self.conv(out)
             # reshape back
