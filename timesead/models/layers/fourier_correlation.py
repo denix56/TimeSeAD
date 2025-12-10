@@ -43,7 +43,7 @@ class FourierBlock(nn.Module):
 
         self.scale = (1 / (in_channels * out_channels))
         self.weights = nn.Parameter(
-            self.scale * torch.rand(num_heads, in_channels // num_heads, out_channels // num_heads, len(self.index), dtype=torch.cfloat))
+            self.scale * torch.rand(len(self.index), num_heads, in_channels // num_heads, out_channels // num_heads, dtype=torch.cfloat))
 
     def forward(self, q, k, v, mask):
         # size = [B, L, H, E]
@@ -57,12 +57,10 @@ class FourierBlock(nn.Module):
         torch._check_is_size(valid, max=self.index.shape[0])
         index = self.index[:valid]
         # Perform Fourier neural operations
-        out_ft = torch.zeros(B, H, E, freq_len, device=x.device, dtype=torch.cfloat)
-        out_ft[..., index] = torch.einsum(
-            "bhik,hiok->bhok", x_ft[..., index], self.weights[..., :valid]
-        )
+        out_ft = x.new_zeros((freq_len, H, B, E))
+        out_ft[index] = torch.matmul(x_ft[..., index].permute(3, 1, 0, 2), self.weights[:valid])
         # Return to time domain
-        x = torch.fft.irfft(out_ft, n=x.size(-1)).to(x.dtype)
+        x = torch.fft.irfft(out_ft, n=x.size(-1), dim=0).permute(2, 1, 3, 0).to(x.dtype).contiguous()
         return (x, None)
 
 
