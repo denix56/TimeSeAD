@@ -263,6 +263,7 @@ class LSTMAEAnomalyDetector(AnomalyDetector):
         input, = inputs
         error = input[-1] - prediction[-1]
         error.abs_()
+        print("COMPUTE ANOMALY SCORE", input.shape, prediction.shape, error.shape)
 
         error -= self.mean
 
