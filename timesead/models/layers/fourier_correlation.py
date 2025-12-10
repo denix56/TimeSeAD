@@ -57,7 +57,7 @@ class FourierBlock(nn.Module):
         torch._check_is_size(valid, max=self.index.shape[0])
         index = self.index[:valid]
         # Perform Fourier neural operations
-        out_ft = x.new_zeros((H, B, E, freq_len))
+        out_ft = x_ft.new_zeros((H, B, E, freq_len))
         out_ft[..., index] = torch.matmul(x_ft[..., index].permute(3, 1, 0, 2), self.weights[:valid]).permute(2, 1, 3, 0)
         # Return to time domain
         x = torch.fft.irfft(out_ft, n=x.size(-1), dim=-1).to(x.dtype)
