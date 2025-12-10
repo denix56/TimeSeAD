@@ -57,10 +57,10 @@ class FourierBlock(nn.Module):
         torch._check_is_size(valid, max=self.index.shape[0])
         index = self.index[:valid]
         # Perform Fourier neural operations
-        out_ft = x.new_zeros((freq_len, H, B, E))
-        out_ft[index] = torch.matmul(x_ft[..., index].permute(3, 1, 0, 2), self.weights[:valid])
+        out_ft = x.new_zeros((H, B, E, freq_len))
+        out_ft[..., index] = torch.matmul(x_ft[..., index].permute(3, 1, 0, 2), self.weights[:valid]).permute(2, 1, 3, 0)
         # Return to time domain
-        x = torch.fft.irfft(out_ft, n=x.size(-1), dim=0).permute(2, 1, 3, 0).to(x.dtype).contiguous()
+        x = torch.fft.irfft(out_ft, n=x.size(-1), dim=-1).to(x.dtype)
         return (x, None)
 
 
@@ -137,14 +137,15 @@ class FourierCrossAttention(nn.Module):
 
         # select requested modes in one shot (no Python loop)
         xq_ft_sel = xq_ft[..., index_q]      # [B, H, E, Mq]
-        xk_ft_sel = xk_ft[..., index_kv].contiguous()     # [B, H, E, Mk]
+        xk_ft_sel = xk_ft[..., index_kv]     # [B, H, E, Mk]
 
         # attention in frequency domain:
         # xqk_ft: [B, H, Mq, Mk]
         xqk_ft = torch.matmul(xq_ft_sel.mT, xk_ft_sel)
 
         if self.activation == 'tanh':
-            xqk_ft = torch.complex(xqk_ft.real.tanh(), xqk_ft.imag.tanh())
+            # TODO: check - do we perform per chanel tanh or complex tanh
+            xqk_ft = torch.view_as_complex(torch.view_as_real(xqk_ft).tanh())
         elif self.activation == 'softmax':
             attn = torch.softmax(xqk_ft.abs(), dim=-1)
             xqk_ft = torch.complex(attn, torch.zeros_like(attn))
@@ -158,12 +159,11 @@ class FourierCrossAttention(nn.Module):
         xqkvw = torch.einsum("bhxy,bhey,heox->bhox", xqk_ft, xk_ft_sel, weights_c)
 
         # place selected freqs back into full spectrum
-        out_ft = torch.zeros(
+        out_ft[..., index_q] = xqk_ft.new_zeros(
             B, H, self.head_dim_out, freq_len_q,
             device=xq.device,
             dtype=torch.cfloat,
         )
-        out_ft[..., index_q] = xqkvw
 
         # iFFT back to time domain
         out = torch.fft.irfft(
