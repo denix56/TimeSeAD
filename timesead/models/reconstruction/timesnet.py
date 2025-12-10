@@ -56,6 +56,7 @@ class TimesBlock(nn.Module):
             out = torch.cat((x, padding), dim=1)
             length = out.shape[1]
             # reshape
+            torch._check_is_size(period_int, max=out.shape[1])
             out = out.reshape(B, length // period_int, period_int, N).permute(0, 3, 1, 2).contiguous()
             # 2D conv: from 1d Variation to 2d Variation
             out = self.conv(out)
