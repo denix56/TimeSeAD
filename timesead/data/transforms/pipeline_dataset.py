@@ -5,16 +5,15 @@ from typing import List, Tuple, Dict, Union, Any
 import torch
 
 from ..dataset import BaseTSDataset
-from .dataset_source import DatasetSource
 from .transform_base import Transform
 from ...utils.utils import objspec2constructor
 
 _logger = logging.getLogger(__name__)
 
 
-def make_pipe_from_dict(pipeline: Dict[str, Dict[str, Any]], data_source: DatasetSource) -> 'PipelineDataset':
+def make_pipe_from_dict(pipeline: Dict[str, Dict[str, Any]], data_source: Transform) -> 'PipelineDataset':
     """
-    Instantiates a :class:`PipelineDataset` from a given :class:`~timesead.data.transforms.DatasetSource` and a
+    Instantiates a :class:`PipelineDataset` from a given :class:`~timesead.data.transforms.Transform` and a
     pipeline specification.
 
     .. warning::
@@ -31,9 +30,9 @@ def make_pipe_from_dict(pipeline: Dict[str, Dict[str, Any]], data_source: Datase
 
         The function respects the order of transforms specified in the dict. That is, the first transform specified in
         the dict will be the first transform added to the pipeline and so on.
-    :param data_source: The :class:`~timesead.data.transforms.DatasetSource` that acts as a source transform for the
+    :param data_source: The :class:`~timesead.data.transforms.TransformRepla` that acts as a source transform for the
         pipeline.
-    :return: A :class:`PipelineDataset` that retrieves data from the given :class:`DatasetSource` and then executes the
+    :return: A :class:`PipelineDataset` that retrieves data from the given :class:`Transform` and then executes the
         specified pipeline.
     """
 
