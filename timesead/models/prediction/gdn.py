@@ -149,22 +149,20 @@ class OutLayer(nn.Module):
     def __init__(self, in_num: int, hidden_dims: Sequence[int] = (512,)):
         super(OutLayer, self).__init__()
 
-        modules = []
+        dims = [in_num, *hidden_dims, 1]
+        layers = []
 
-        dims = [in_num] + list(hidden_dims) + [1]
+        for idx, (in_dims, out_dims) in enumerate(zip(dims[:-1], dims[1:])):
+            layers.append(nn.Linear(in_dims, out_dims))
+            # Skip activation on final layer
+            if idx < len(hidden_dims):
+                layers.append(nn.BatchNorm1d(out_dims))
+                layers.append(nn.ReLU())
 
-        for i, (in_dims, out_dims) in enumerate(zip(dims[:-1], dims[1:])):
-            # last layer, output shape:1
-            modules.append(nn.Linear(in_dims, out_dims))
-            if i != len(hidden_dims) - 1:
-                modules.append(nn.BatchNorm1d(out_dims))
-                modules.append(nn.ReLU())
+        self.mlp = nn.ModuleList(layers)
 
-        self.mlp = nn.ModuleList(modules)
-
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = x
-
         for mod in self.mlp:
             if isinstance(mod, nn.BatchNorm1d):
                 # Note that batch norm expects (B, D, T) inputs, but also keep in mind that the roles
@@ -198,18 +196,31 @@ class GNNLayer(nn.Module):
         return self.relu(out)
 
 
-def fallback_knn_graph(embedding: torch.Tensor, k: int):
+def fallback_knn_graph(embedding: torch.Tensor, k: int) -> torch.Tensor:
+    """Deterministic cosine-similarity-based KNN graph builder.
+
+    The fallback is used on CPU or when deterministic algorithms are enabled to avoid
+    non-deterministic CUDA kernels inside :func:`torch_geometric.nn.knn_graph`.
+    """
+
     node_num = embedding.shape[0]
     weights = embedding.view(node_num, -1)
+    normalized = F.normalize(weights, p=2, dim=-1)
+    cos_sim = torch.matmul(normalized, normalized.T)
 
-    cos_ji_mat = torch.matmul(weights, weights.T)
-    normed_mat = torch.matmul(weights.norm(dim=-1).view(-1, 1), weights.norm(dim=-1).view(1, -1))
-    cos_ji_mat = cos_ji_mat / normed_mat
+    # ``torch.topk`` respects the deterministic flag on supported devices.
+    topk_indices = torch.topk(cos_sim, k, dim=-1, largest=True).indices
 
-    topk_indices_ji = torch.topk(cos_ji_mat, k, dim=-1)[1]
-
-    gated_i = torch.arange(0, node_num, device=embedding.device).T.unsqueeze(1).repeat(1, k).flatten().unsqueeze(0)
-    gated_j = topk_indices_ji.flatten().unsqueeze(0)
+    # ``torch.arange`` is 1D, so transpose is a no-op; use ``view`` to make the intended
+    # column vector shape explicit before repeating.
+    gated_i = (
+        torch.arange(node_num, device=embedding.device)
+        .view(-1, 1)
+        .repeat(1, k)
+        .flatten()
+        .unsqueeze(0)
+    )
+    gated_j = topk_indices.flatten().unsqueeze(0)
     return torch.cat((gated_j, gated_i), dim=0)
 
 
@@ -235,7 +246,7 @@ class GDN(BaseModel):
 
         edge_set_num = len(self.edge_index_sets)
         self.gnn_layers = nn.ModuleList([
-            GNNLayer(input_dim, dim, inter_dim=dim + embed_dim, heads=1) for i in range(edge_set_num)
+            GNNLayer(input_dim, dim, inter_dim=dim + embed_dim, heads=1) for _ in range(edge_set_num)
         ])
 
         self.node_embedding = None
@@ -267,11 +278,22 @@ class GDN(BaseModel):
         node_indices = torch.arange(node_num, device=device)
         all_embeddings = self.embedding(node_indices)
         weights_arr = all_embeddings.detach()
-        if weights_arr.device.type == 'cpu':
-            # torch-geometric knn_graph does not support CPU, so we keep the original method as a fallback
+
+        deterministic_mode = torch.are_deterministic_algorithms_enabled()
+        use_fallback = weights_arr.device.type == 'cpu' or deterministic_mode
+
+        if not use_fallback:
+            try:
+                gated_edge_index = knn_graph(weights_arr, self.topk, cosine=True)
+            except RuntimeError as err:
+                # CUDA KNN graph kernel is not deterministic; fall back when requested.
+                if 'deterministic' in str(err).lower():
+                    use_fallback = True
+                else:
+                    raise
+
+        if use_fallback:
             gated_edge_index = fallback_knn_graph(weights_arr, self.topk)
-        else:
-            gated_edge_index = knn_graph(weights_arr, self.topk, cosine=True)
 
         self.learned_graph = gated_edge_index[0].view(-1, self.topk)
 
