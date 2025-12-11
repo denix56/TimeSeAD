@@ -306,7 +306,8 @@ class LSTMAEAnomalyDetectorV2(LSTMAEAnomalyDetector):
             with torch.inference_mode():
                 pred = self.model(b_inputs).to(torch.float32)
 
-            target = b_inputs[0].to(torch.float32)
+            target, = b_targets
+            target = target.to(torch.float32)
 
             if i == 0:
                 # Use all datapoints in the first window
