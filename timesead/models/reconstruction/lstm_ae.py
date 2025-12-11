@@ -202,6 +202,29 @@ class LSTMAEAnomalyDetector(AnomalyDetector):
 
         self.model = model
 
+    def _compute_precision(self, centered_errors: torch.Tensor, total: int) -> torch.Tensor:
+        """Build a positive-definite covariance estimate and its inverse.
+
+        ``torch.linalg.cholesky_ex`` is used instead of ``torch.linalg.cholesky`` so that
+        we can iteratively add jitter in a deterministic, exception-free manner that plays
+        nicely with :func:`torch.use_deterministic_algorithms`.
+        """
+        base_cov = torch.matmul(centered_errors.T, centered_errors)
+        base_cov /= total - 1
+
+        eye = torch.eye(base_cov.size(0), device=base_cov.device, dtype=base_cov.dtype)
+        jitter_values = [10.0 ** -i for i in range(5, -3, -1)]
+
+        for jitter in jitter_values:
+            adjusted_cov = base_cov + jitter * eye
+            chol, info = torch.linalg.cholesky_ex(adjusted_cov, check_errors=False)
+
+            # ``info`` is zero when the decomposition succeeds and NaNs are avoided
+            if torch.count_nonzero(info) == 0:
+                return torch.cholesky_inverse(chol)
+
+        raise RuntimeError('Could not compute a valid covariance matrix!')
+
     def fit(self, dataset: torch.utils.data.DataLoader) -> None:
         errors = []
         mean = 0
@@ -233,24 +256,7 @@ class LSTMAEAnomalyDetector(AnomalyDetector):
 
         errors = torch.cat(errors, dim=0)
         errors -= mean
-        cov = torch.matmul(errors.T, errors)
-        cov /= total - 1
-
-        for i in range(5, -3, -1):
-            try:
-                cov.diagonal().add_(10**-i)
-                cholesky = torch.linalg.cholesky(cov)
-                if not torch.isnan(cholesky).any():
-                    break
-            except Exception as e:
-                print(f"Cholesky decomposition failed: {e}, trying to fix by adding small value to diagonal.")
-                # If the covariance matrix is not positive definite, we can try to add a small value to the diagonal until it becomes positive definite
-                continue
-        else:
-            raise RuntimeError('Could not compute a valid covariance matrix!')
-
-        precision = cov
-        torch.cholesky_inverse(cholesky, out=precision)
+        precision = self._compute_precision(errors, total)
 
         self.register_buffer('mean', mean)
         self.register_buffer('precision', precision)

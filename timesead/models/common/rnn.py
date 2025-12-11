@@ -5,6 +5,7 @@ from typing import List, Union, Optional, Tuple, Sequence
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class RNN(nn.Module):
@@ -183,14 +184,17 @@ class RNN(nn.Module):
         padding = (seq_len + dilation - 1) // dilation * dilation - seq_len
 
         if padding > 0:
-            pad_shape = [padding] + list(inputs.shape[1:])
-            zeros_ = torch.zeros(pad_shape, device=inputs.device, dtype=inputs.dtype)
-            inputs = torch.cat((inputs, zeros_))
+            pad_config = [0] * (2 * inputs.dim())
+            pad_config[-1] = padding
+            inputs = F.pad(inputs, pad=tuple(pad_config))
 
         dilated_inputs = torch.cat([inputs[j::dilation] for j in range(dilation)], 1)
 
         if hidden is not None:
-            hidden = hidden.repeat(dilation, 1)
+            if isinstance(hidden, tuple):
+                hidden = tuple(h.repeat(dilation, 1) for h in hidden)
+            else:
+                hidden = hidden.repeat(dilation, 1)
 
         return dilated_inputs, padding, hidden
 
