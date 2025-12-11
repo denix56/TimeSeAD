@@ -94,11 +94,13 @@ class GraphLayer(MessagePassing):
 
         if embedding is not None:
             embedding_i, embedding_j = embedding[edge_index_i], embedding[edges[0]]
-            embedding_i = embedding_i.unsqueeze(1).repeat(1, self.heads, 1)
-            embedding_j = embedding_j.unsqueeze(1).repeat(1, self.heads, 1)
+            embedding_i = embedding_i.unsqueeze(1).expand(-1, self.heads, -1)
+            embedding_j = embedding_j.unsqueeze(1).expand(-1, self.heads, -1)
 
             key_i = torch.cat((x_i, embedding_i), dim=-1)
             key_j = torch.cat((x_j, embedding_j), dim=-1)
+        else:
+            key_i, key_j = x_i, x_j
 
         cat_att_i = torch.cat((self.att_i, self.att_em_i), dim=-1)
         cat_att_j = torch.cat((self.att_j, self.att_em_j), dim=-1)
