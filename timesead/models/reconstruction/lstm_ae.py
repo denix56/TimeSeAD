@@ -295,6 +295,7 @@ class LSTMAEAnomalyDetector(AnomalyDetector):
 class LSTMAEAnomalyDetectorV2(LSTMAEAnomalyDetector):
     def fit(self, dataset: torch.utils.data.DataLoader) -> None:
         errors = []
+        mean = 0
         total = 0
         device = torch_utils.get_device(self.model)
 
