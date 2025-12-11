@@ -27,5 +27,5 @@ class InceptionBlockV1(nn.Module):
         res_list = []
         for i in range(self.num_kernels):
             res_list.append(self.kernels[i](x))
-        res = torch.stack(res_list, dim=-1).mean(-1)
+        res = sum(res_list)
         return res
