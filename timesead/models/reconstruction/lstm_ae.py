@@ -200,8 +200,8 @@ class LSTMAEMirza2018(LSTMAE):
 class LSTMAEAnomalyDetector(AnomalyDetector):
     def __init__(self, model: LSTMAE):
         super(LSTMAEAnomalyDetector, self).__init__()
-        self.register_buffer('mean', 0)
-        self.register_buffer('precision', 0)
+        self.register_buffer('mean', torch.nan)
+        self.register_buffer('precision', torch.nan)
         self.model = model
 
     def _compute_precision(self, centered_errors: torch.Tensor, total: int) -> torch.Tensor:
