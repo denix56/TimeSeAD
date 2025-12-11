@@ -209,21 +209,25 @@ class LSTMAEAnomalyDetector(AnomalyDetector):
         we can iteratively add jitter in a deterministic, exception-free manner that plays
         nicely with :func:`torch.use_deterministic_algorithms`.
         """
-        base_cov = torch.matmul(centered_errors.T, centered_errors)
-        base_cov /= total - 1
+        cov = torch.matmul(centered_errors.T, centered_errors)
+        cov /= total - 1
 
-        eye = torch.eye(base_cov.size(0), device=base_cov.device, dtype=base_cov.dtype)
-        jitter_values = [10.0 ** -i for i in range(5, -3, -1)]
+        for i in range(5, -3, -1):
+            try:
+                cov.diagonal().add_(10 ** -i)
+                cholesky = torch.linalg.cholesky(cov)
+                if not torch.isnan(cholesky).any():
+                    break
+            except Exception as e:
+                print(f"Cholesky decomposition failed: {e}, trying to fix by adding small value to diagonal.")
+                # If the covariance matrix is not positive definite, we can try to add a small value to the diagonal until it becomes positive definite
+                continue
+        else:
+            raise RuntimeError('Could not compute a valid covariance matrix!')
 
-        for jitter in jitter_values:
-            adjusted_cov = base_cov + jitter * eye
-            chol, info = torch.linalg.cholesky_ex(adjusted_cov, check_errors=False)
-
-            # ``info`` is zero when the decomposition succeeds and NaNs are avoided
-            if torch.count_nonzero(info) == 0:
-                return torch.cholesky_inverse(chol)
-
-        raise RuntimeError('Could not compute a valid covariance matrix!')
+        precision = cov
+        torch.cholesky_inverse(cholesky, out=precision)
+        return precision
 
     def fit(self, dataset: torch.utils.data.DataLoader) -> None:
         errors = []
