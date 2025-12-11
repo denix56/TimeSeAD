@@ -1,5 +1,6 @@
 import abc
 import functools
+from statistics import mean
 from typing import Tuple, Union, Callable, List, Type
 
 import torch
@@ -199,7 +200,8 @@ class LSTMAEMirza2018(LSTMAE):
 class LSTMAEAnomalyDetector(AnomalyDetector):
     def __init__(self, model: LSTMAE):
         super(LSTMAEAnomalyDetector, self).__init__()
-
+        self.register_buffer('mean', 0)
+        self.register_buffer('precision', 0)
         self.model = model
 
     def _compute_precision(self, centered_errors: torch.Tensor, total: int) -> torch.Tensor:
@@ -263,8 +265,8 @@ class LSTMAEAnomalyDetector(AnomalyDetector):
         errors -= mean
         precision = self._compute_precision(errors, total)
 
-        self.register_buffer('mean', mean)
-        self.register_buffer('precision', precision)
+        self.mean = mean
+        self.precision = precision
 
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         # Input of shape (T, B, D), output of shape (B,)
@@ -293,7 +295,6 @@ class LSTMAEAnomalyDetector(AnomalyDetector):
 class LSTMAEAnomalyDetectorV2(LSTMAEAnomalyDetector):
     def fit(self, dataset: torch.utils.data.DataLoader) -> None:
         errors = []
-        mean = 0
         total = 0
         device = torch_utils.get_device(self.model)
 
@@ -324,5 +325,5 @@ class LSTMAEAnomalyDetectorV2(LSTMAEAnomalyDetector):
         errors -= mean
         precision = self._compute_precision(errors, total)
 
-        self.register_buffer('mean', mean)
-        self.register_buffer('precision', precision)
+        self.mean = mean
+        self.precision = precision
