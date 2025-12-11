@@ -241,9 +241,9 @@ class LSTMAEAnomalyDetector(AnomalyDetector):
         # Compute mean and covariance over the entire validation dataset
         for i, (b_inputs, b_targets) in enumerate(dataset):
             b_inputs = tuple(b_inp.to(device) for b_inp in b_inputs)
-            b_targets = tuple(b_tar.to(device) for b_tar in b_targets)
-            with torch.no_grad():
-                pred = self.model(b_inputs)
+            b_targets = tuple(b_tar.to(device).to(torch.float32) for b_tar in b_targets)
+            with torch.inference_mode():
+                pred = self.model(b_inputs).to(torch.float32)
 
             target, = b_targets
 
@@ -291,40 +291,3 @@ class LSTMAEAnomalyDetector(AnomalyDetector):
         # Just return the last label of the window
         return target[-1]
 
-
-class LSTMAEAnomalyDetectorV2(LSTMAEAnomalyDetector):
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
-        errors = []
-        mean = 0
-        total = 0
-        device = torch_utils.get_device(self.model)
-
-        # Compute mean and covariance over the entire validation dataset
-        for i, (b_inputs, b_targets) in enumerate(dataset):
-            b_inputs = tuple(b_inp.to(device) for b_inp in b_inputs)
-            b_targets = tuple(b_tar.to(device).to(torch.float32) for b_tar in b_targets)
-            with torch.inference_mode():
-                pred = self.model(b_inputs).to(torch.float32)
-
-            target, = b_targets
-
-            if i == 0:
-                # Use all datapoints in the first window
-                error = target - pred
-            else:
-                # In all subsequent windows, only the last datapoint will be new
-                error = target[-1:] - pred[-1:]
-            error.abs_()
-            errors.append(error.reshape(-1, error.shape[-1]))
-
-            mean += torch.sum(error, dim=(0, 1))
-            total += error.shape[0] * error.shape[1]
-
-        mean /= total
-
-        errors = torch.cat(errors, dim=0)
-        errors -= mean
-        precision = self._compute_precision(errors, total)
-
-        self.mean = mean
-        self.precision = precision
