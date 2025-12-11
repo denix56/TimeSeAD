@@ -211,6 +211,7 @@ class LSTMAEAnomalyDetector(AnomalyDetector):
         """
         cov = torch.matmul(centered_errors.T, centered_errors)
         cov /= total - 1
+        cov = 0.5 * (cov + cov.T)
 
         for i in range(5, -3, -1):
             try:
