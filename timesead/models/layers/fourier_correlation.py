@@ -98,7 +98,6 @@ class FourierBlock(nn.Module):
         mode_select_method: str = "random",
         fft_norm: str = "backward",
         w_init: str = "random",
-        residual: bool = False,
         freq_norm_mode: str | None = None,  # None -> no normalization
         lrfop: bool = False,
         gate_mlp: bool = False,
@@ -120,7 +119,6 @@ class FourierBlock(nn.Module):
 
         self.fft_norm = None if fft_norm in (None, "backward") else fft_norm
         self.w_init = w_init
-        self.residual = residual
         self.freq_norm_mode = freq_norm_mode
         self.lrfop = lrfop
         self.gate_mlp_enabled = gate_mlp
@@ -274,9 +272,6 @@ class FourierBlock(nn.Module):
 
         # Back to time: (B, L, H, Eout)
         y = torch.fft.irfft(out_ft, n=L, dim=1, norm=self.fft_norm).to(x_in.dtype)
-
-        if self.residual and (self.Ein == self.Eout):
-            y = y + x_in
 
         return (y, None)
 
