@@ -105,10 +105,10 @@ class FourierCrossAttention(nn.Module):
         self.weights = nn.Parameter(
             self.scale
             * torch.rand(
+                len(index_q),
                 num_heads,
                 self.head_dim_in,
                 self.head_dim_out,
-                len(index_q),
                 dtype=torch.cfloat,
             )
         )
@@ -119,57 +119,54 @@ class FourierCrossAttention(nn.Module):
         assert H == self.num_heads
         _, Lkv, _, _ = k.shape
 
-        # [B, H, E, L]
-        xq = q.permute(0, 2, 3, 1)
-        xk = k.permute(0, 2, 3, 1)
+        xq = q.to(torch.float32)
+        xk = k.to(torch.float32)
         # original code does not actually use v; keep behavior
         # xv = v.permute(0, 2, 3, 1)
 
         # FFT
-        xq_ft = torch.fft.rfft(xq.to(torch.float32), dim=-1)   # [B, H, E, Lq//2+1]
-        xk_ft = torch.fft.rfft(xk.to(torch.float32), dim=-1)   # [B, H, E, Lkv//2+1]
+        xq_ft = torch.fft.rfft(xq, dim=1)   # [B, H, E, Lq//2+1]
+        xk_ft = torch.fft.rfft(xk, dim=1)   # [B, H, E, Lkv//2+1]
 
-        freq_len_q = xq_ft.size(-1)
-        freq_len_kv = xk_ft.size(-1)
-        valid_q = int(torch.searchsorted(self.index_q, freq_len_q).item())
-        valid_kv = int(torch.searchsorted(self.index_kv, freq_len_kv).item())
+        freq_len_q = xq_ft.size(1)
+        freq_len_kv = xk_ft.size(1)
+        valid_q = torch.searchsorted(self.index_q, freq_len_q).item()
+        valid_kv = torch.searchsorted(self.index_kv, freq_len_kv).item()
         index_q = self.index_q[:valid_q]
         index_kv = self.index_kv[:valid_kv]
 
         # select requested modes in one shot (no Python loop)
-        xq_ft_sel = xq_ft[..., index_q]      # [B, H, E, Mq]
-        xk_ft_sel = xk_ft[..., index_kv]     # [B, H, E, Mk]
+        xq_ft_sel = xq_ft[:, index_q]      # [B, H, E, Mq]
+        xk_ft_sel = xk_ft[:, index_kv]     # [B, H, E, Mk]
 
         # attention in frequency domain:
         # xqk_ft: [B, H, Mq, Mk]
-        xqk_ft = torch.matmul(xq_ft_sel.mT, xk_ft_sel)
+        xqk_ft = torch.einsum('blhe,bmhe->bmhl',xq_ft_sel, xk_ft_sel)
 
         if self.activation == 'tanh':
             # TODO: check - do we perform per chanel tanh or complex tanh
             xqk_ft = torch.view_as_complex(torch.view_as_real(xqk_ft).tanh())
         elif self.activation == 'softmax':
-            attn = torch.softmax(xqk_ft.abs(), dim=-1)
+            attn = torch.softmax(xqk_ft.abs(), dim=1)
             xqk_ft = torch.complex(attn, torch.zeros_like(attn))
         else:
             raise Exception(f'{self.activation} activation function is not implemented')
 
         # linear transform with complex weights
-        weights_c = self.weights[..., :valid_q]    # [H, Ein, Eout, Mq]
+        weights_c = self.weights[:valid_q]    # [H, Ein, Eout, Mq]
 
         # combine with keys again: [B, H, E, Mq]
-        xqkvw = torch.einsum("bhxy,bhey,heox->bhox", xqk_ft, xk_ft_sel, weights_c)
+        xqkvw = torch.einsum("bmhl,bmhe,lhek->blhk", xqk_ft, xk_ft_sel, weights_c)
 
         # place selected freqs back into full spectrum
-        out_ft[..., index_q] = xqk_ft.new_zeros(
-            B, H, self.head_dim_out, freq_len_q,
-            device=xq.device,
-            dtype=torch.cfloat,
-        )
+        out_ft = xqk_ft.new_zeros(B, freq_len_q, H, self.head_dim_out)
+        out_ft[:, index_q] = xqkvw
 
         # iFFT back to time domain
         out = torch.fft.irfft(
             out_ft / (self.in_channels * self.out_channels),
             n=xq.size(-1),
+            dim=1,
         )  # [B, H, Eout, L]
 
         return out.to(q.dtype), None
