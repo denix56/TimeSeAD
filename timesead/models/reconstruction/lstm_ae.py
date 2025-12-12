@@ -14,7 +14,7 @@ from ...utils.utils import getitem
 
 
 class LSTMAEDecoder(torch.nn.Module, abc.ABC):
-    def __init__(self, enc_hidden_dimension: int, hidden_dimensions: List[int], output_dimension: int):
+    def __init__(self, enc_hidden_dimension: int, hidden_dimensions: List[int], output_dimension: int, dropout: float = 0.0):
         super().__init__()
 
     @abc.abstractmethod
@@ -28,11 +28,11 @@ class LSTMAEDecoderSimple(LSTMAEDecoder):
     that is used as input to every timestep of the decoder
     This corresponds to Mirza 2018
     """
-    def __init__(self, enc_hidden_dimension: int, hidden_dimensions: List[int], output_dimension: int):
-        super().__init__(enc_hidden_dimension, hidden_dimensions, output_dimension)
+    def __init__(self, enc_hidden_dimension: int, hidden_dimensions: List[int], output_dimension: int, dropout: float = 0.0):
+        super().__init__(enc_hidden_dimension, hidden_dimensions, output_dimension, dropout)
 
         self.lstm = RNN(layer_type='LSTM', input_dimension=enc_hidden_dimension, model='s2s',
-                        hidden_dimensions=hidden_dimensions + [output_dimension])
+                        hidden_dimensions=hidden_dimensions + [output_dimension], dropout=dropout)
 
     def forward(self, initial_hidden: List[torch.Tensor], seq_len: int, x: torch.Tensor = None) -> torch.Tensor:
         """
@@ -58,11 +58,11 @@ class LSTMAEDecoderReverse(LSTMAEDecoder):
     Reconstruct the time series in the opposite direction, starting with an initial hidden state from the encoder
     This corresponds to Malhotra 2016
     """
-    def __init__(self, enc_hidden_dimension: int, hidden_dimensions: List[int], output_dimension: int):
-        super().__init__(enc_hidden_dimension, hidden_dimensions, output_dimension)
+    def __init__(self, enc_hidden_dimension: int, hidden_dimensions: List[int], output_dimension: int, dropout: float = 0.0):
+        super().__init__(enc_hidden_dimension, hidden_dimensions, output_dimension, dropout)
 
         self.lstm = RNN(layer_type='LSTM', input_dimension=output_dimension, model='s2as',
-                        hidden_dimensions=[enc_hidden_dimension] + hidden_dimensions)
+                        hidden_dimensions=[enc_hidden_dimension] + hidden_dimensions, dropout=dropout)
         self.linear = torch.nn.Linear(hidden_dimensions[-1], output_dimension)
 
     def forward(self, initial_hidden: List[torch.Tensor], seq_len: int, x: torch.Tensor = None) -> torch.Tensor:
@@ -115,16 +115,18 @@ class LSTMAE(AE, BaseModel):
     Generic LSTMAE implementation
     """
     def __init__(self, input_dimension: int, hidden_dimensions=None, latent_pooling: Union[str, Callable] = 'last',
-                 decoder_class: Type[LSTMAEDecoder] = LSTMAEDecoderReverse, return_latent: bool = False):
+                 decoder_class: Type[LSTMAEDecoder] = LSTMAEDecoderReverse, return_latent: bool = False,
+                 dropout: float = 0.0):
         if hidden_dimensions is None:
             hidden_dimensions = [40]
 
         encoder = RNN(layer_type='LSTM', input_dimension=input_dimension, model='s2as',
-                      hidden_dimensions=hidden_dimensions)
+                      hidden_dimensions=hidden_dimensions, dropout=dropout)
         dec_hidden_dimensions = hidden_dimensions if len(hidden_dimensions) == 1 else hidden_dimensions[-2::-1]
         decoder = decoder_class(enc_hidden_dimension=hidden_dimensions[-1], hidden_dimensions=dec_hidden_dimensions,
                                 output_dimension=input_dimension)
 
+        super().__init__(encoder, decoder, return_latent=return_latent)
         super().__init__(encoder, decoder, return_latent=return_latent)
 
         if latent_pooling == 'last':
