@@ -29,7 +29,13 @@ class FEDformer(BaseModel):
             encoder_layers: int=3,
             version: str='fourier',
             mode_select: str='random',
-            modes: int=32
+            modes: int=32,
+            fft_norm: str = "backward",
+            w_init: str = "random",
+            residual: bool = False,
+            freq_norm_mode: str | None = None,  # None -> no normalization
+            lrfop: bool = False,
+            gate_mlp: bool = False,
         ) -> None:
         """
         version: str, for FEDformer, there are two versions to choose, options: [Fourier, Wavelets].
@@ -55,7 +61,14 @@ class FEDformer(BaseModel):
                                             seq_len=self.seq_len,
                                             num_heads=num_heads,
                                             modes=self.modes,
-                                            mode_select_method=self.mode_select)
+                                            mode_select_method=self.mode_select,
+                                            fft_norm=fft_norm,
+                                            w_init=w_init,
+                                            residual=residual,
+                                            freq_norm_mode=freq_norm_mode,
+                                            lrfop=lrfop,
+                                            gate_mlp=gate_mlp
+                                            )
         # Encoder
         self.encoder = Encoder(
             [
