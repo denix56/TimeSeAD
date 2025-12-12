@@ -1,7 +1,7 @@
 """
 Implementations of basic recurrent neural networks.
 """
-from typing import List, Union, Optional, Tuple, Sequence
+from typing import List, Union, Optional, Tuple, Sequence, Dict, Any
 
 import torch
 import torch.nn as nn
@@ -61,7 +61,7 @@ class RNN(nn.Module):
         else:
             raise NotImplementedError(layer_type)
 
-        layer_kwargs = {'num_layers': 1, 'bias': recurrent_bias,
+        layer_kwargs: Dict[str, Any] = {'num_layers': 1, 'bias': recurrent_bias,
                         'batch_first': False,
                         'bidirectional': bidirectional}
 
