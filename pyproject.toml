@@ -33,6 +33,7 @@ dependencies = [
   "torch>=2.6",
   "torchvision>=0.2.2",
   "torch-geometric",
+  "opt_einsum",
   #"torch-cluster @ git+https://github.com/rusty1s/pytorch_cluster.git", # build separately
   "pyreadr",
   "pyod",

@@ -48,9 +48,9 @@ class FourierBlock(nn.Module):
     def forward(self, q, k, v, mask):
         # size = [B, L, H, E]
         B, L, H, E = q.shape
-        x = q.permute(0, 2, 3, 1)
+        x = q.to(torch.float32)
         # Compute Fourier coefficients
-        x_ft = torch.fft.rfft(x.to(torch.float32), dim=-1)
+        x_ft = torch.fft.rfft(x, dim=1)
         freq_len = x_ft.size(-1)
         # index is sorted; searchsorted counts how many entries are < freq_len
         valid = torch.searchsorted(self.index, freq_len).item()
@@ -58,10 +58,10 @@ class FourierBlock(nn.Module):
         assert valid <= self.index.shape[0]
         index = self.index[:valid]
         # Perform Fourier neural operations
-        out_ft = x_ft.new_zeros((H, B, E, freq_len))
-        out_ft[..., index] = torch.matmul(x_ft[..., index].permute(3, 1, 0, 2), self.weights[:valid]).permute(2, 1, 3, 0)
+        out_ft = x_ft.new_zeros((B, freq_len, H, E))
+        out_ft[:, index] = torch.einsum("blhe,lhek->blhk", x_ft[:, index], self.weights[:valid])
         # Return to time domain
-        x = torch.fft.irfft(out_ft, n=x.size(-1), dim=-1).to(x.dtype)
+        x = torch.fft.irfft(out_ft, n=x.size(-1), dim=1).to(x.dtype)
         return (x, None)
 
 
