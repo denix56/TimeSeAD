@@ -170,20 +170,22 @@ class LSTMAEMalhotra2016(LSTMAE):
     """
     Implementation of Malhotra 2016 (https://arxiv.org/pdf/1607.00148.pdf, default parameters)
     """
-    def __init__(self, input_dimension: int, hidden_dimensions=None):
+    def __init__(self, input_dimension: int, hidden_dimensions=None, dropout: float = 0.0):
         super(LSTMAEMalhotra2016, self).__init__(input_dimension, hidden_dimensions=hidden_dimensions,
                                                  latent_pooling='last', decoder_class=LSTMAEDecoderReverse,
-                                                 return_latent=False)
+                                                 return_latent=False, dropout=dropout)
 
 
 class LSTMAEMirza2018(LSTMAE):
     """
     Mirza 2018 (http://repository.bilkent.edu.tr/bitstream/handle/11693/50234/Computer_network_intrusion_detection_using_sequential_LSTM_neural_networks_autoencoders.pdf?sequence=1)
     """
-    def __init__(self, input_dimension: int, hidden_dimensions: List[int] = [64], latent_pooling: str = 'mean'):
+    def __init__(self, input_dimension: int, hidden_dimensions: List[int] = (64,),
+                 latent_pooling: str = 'mean',
+                 dropout: float = 0.0):
         super(LSTMAEMirza2018, self).__init__(input_dimension, hidden_dimensions=hidden_dimensions,
                                               latent_pooling=latent_pooling, decoder_class=LSTMAEDecoderSimple,
-                                              return_latent=False)
+                                              return_latent=False, dropout=dropout)
 
         self.sigmoid = torch.nn.Sigmoid()
 
