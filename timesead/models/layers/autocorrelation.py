@@ -217,12 +217,11 @@ class AutoCorrelationLayer(nn.Module):
         _, S, _ = keys.shape
         H = self.n_heads
 
-        q_w, k_w, v_w = self._split_qkv_weights()
-        q_b, k_b, v_b = self._split_qkv_biases()
-
         if queries is keys and queries is values:
             q_out, k_out, v_out = self._project_shared_qkv(queries)
         else:
+            q_w, k_w, v_w = self._split_qkv_weights()
+            q_b, k_b, v_b = self._split_qkv_biases()
             q_out = F.linear(queries, q_w, q_b)
             k_out = F.linear(keys, k_w, k_b)
             v_out = F.linear(values, v_w, v_b)
