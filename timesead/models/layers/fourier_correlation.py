@@ -61,7 +61,7 @@ class FourierBlock(nn.Module):
         out_ft = x_ft.new_zeros((B, freq_len, H, E))
         out_ft[:, index] = torch.einsum("blhe,lhek->blhk", x_ft[:, index], self.weights[:valid])
         # Return to time domain
-        x = torch.fft.irfft(out_ft, n=x.size(-1), dim=1).to(x.dtype)
+        x = torch.fft.irfft(out_ft, n=x.size(1), dim=1).to(x.dtype)
         return (x, None)
 
 
@@ -167,6 +167,6 @@ class FourierCrossAttention(nn.Module):
             out_ft / (self.in_channels * self.out_channels),
             n=xq.size(-1),
             dim=1,
-        )  # [B, H, Eout, L]
+        )  # [B, L, H, Eout]
 
         return out.to(q.dtype), None
