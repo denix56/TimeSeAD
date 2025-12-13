@@ -32,7 +32,6 @@ class FEDformer(BaseModel):
             modes: int=32,
             fft_norm: str = "backward",
             w_init: str = "random",
-            residual: bool = False,
             freq_norm_mode: str | None = None,  # None -> no normalization
             lrfop: bool = False,
             gate_mlp: bool = False,
@@ -64,7 +63,6 @@ class FEDformer(BaseModel):
                                             mode_select_method=self.mode_select,
                                             fft_norm=fft_norm,
                                             w_init=w_init,
-                                            residual=residual,
                                             freq_norm_mode=freq_norm_mode,
                                             lrfop=lrfop,
                                             gate_mlp=gate_mlp
