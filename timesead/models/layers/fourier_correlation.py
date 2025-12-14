@@ -170,7 +170,7 @@ class FourierBlock(nn.Module):
 
         if not self.lrfop:
             # Full operator: (B,K,H,Ein) x (K,H,Ein,Eout) -> (B,K,H,Eout)
-            W = self.weights[valid_mask]  # (K,H,Ein,Eout)
+            W = self.weights[:K]  # (K,H,Ein,Eout)
             out_sel = torch.einsum("bkhi,khio->bkho", x_sel, W)
 
         else:
