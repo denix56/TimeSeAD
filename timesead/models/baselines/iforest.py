@@ -55,7 +55,6 @@ class IForestAD(AnomalyDetector):
         data_full = []
         for (b_inputs, b_targets) in dataset:
             data = b_inputs[0]
-            print(data.shape)
             batch_size, window_size, n_features = data.shape
             self.window_size = window_size
             data = data.reshape(batch_size, window_size*n_features)
