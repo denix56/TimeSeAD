@@ -1,5 +1,14 @@
 from .transform_base import Transform
-from .general_transforms import SubsampleTransform, CacheTransform, LimitTransform
+from .general_transforms import (
+    CacheTransform,
+    LimitTransform,
+    SubsampleTransform,
+    TSMagAddNoise,
+    TSMagScale,
+    TSMaskOut,
+    TSTimeWarp,
+    TSTranslateX,
+)
 from .target_transforms import ReconstructionTargetTransform, OneVsRestTargetTransform, PredictionTargetTransform, \
     OverlapPredictionTargetTransform
 from .window_transform import WindowTransform
