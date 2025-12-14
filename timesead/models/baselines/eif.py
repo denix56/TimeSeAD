@@ -17,6 +17,7 @@ class EIFAD(AnomalyDetector):
         feature_combinations: Optional[int] = 2,
         n_jobs: Optional[int] = None,
         input_shape: str = "btf",
+        verbose: int = 0,
     ) -> None:
         """"
         Extended Isolation Forest Anomaly Detector.
@@ -66,23 +67,8 @@ class EIFAD(AnomalyDetector):
         self.bootstrap = bootstrap
         self.feature_combinations = feature_combinations
         self.n_jobs = n_jobs
+        self.verbose = verbose
         self.input_shape = input_shape
-        self.model = None
-
-
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
-        # Merge all batches as batch processing is not possible
-        data_full = []
-        for (b_inputs, b_targets) in dataset:
-            data = b_inputs[0]
-            print(data.shape)
-            batch_size, window_size, n_features = data.shape
-            self.window_size = window_size
-            data_full.append(data.reshape(batch_size, window_size * n_features))
-        data_full = torch.cat(data_full, dim=0)
-
-        data = data_full.cpu().detach().numpy().astype(np.float32)
-
         self.model = ExtendedIsolationForest(
             n_estimators=self.n_trees,
             max_samples=self.sample_size,
@@ -91,8 +77,21 @@ class EIFAD(AnomalyDetector):
             bootstrap=self.bootstrap,
             feature_combinations=self.feature_combinations,
             n_jobs=self.n_jobs,
-        ).fit(data)
+            verbose=self.verbose
+        )
 
+    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+        # Merge all batches as batch processing is not possible
+        data_full = []
+        for (b_inputs, b_targets) in dataset:
+            data = b_inputs[0]
+            batch_size, window_size, n_features = data.shape
+            self.window_size = window_size
+            data_full.append(data.view(batch_size, window_size * n_features))
+        data_full = torch.cat(data_full, dim=0)
+
+        data = data_full.cpu().detach().numpy().astype(np.float32)
+        self.model = self.model.fit(data)
 
     def compute_online_anomaly_score(
         self, inputs: Tuple[torch.Tensor, ...]
