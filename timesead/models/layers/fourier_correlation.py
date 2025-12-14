@@ -26,48 +26,6 @@ def get_frequency_modes(seq_len, modes=64, mode_select_method='random'):
     return index
 
 
-# ########## fourier layer #############
-class FourierBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, seq_len, num_heads=8, modes=0, mode_select_method='random'):
-        super(FourierBlock, self).__init__()
-        # print('fourier enhanced block used!')
-        """
-        1D Fourier block. It performs representation learning on frequency domain,
-        it does FFT, linear transform, and Inverse FFT.
-        """
-        self.seq_len = seq_len
-        # get modes on frequency domain
-        index = get_frequency_modes(seq_len, modes=modes, mode_select_method=mode_select_method)
-        self.register_buffer('index', torch.from_numpy(index))
-        # print('modes={}, index={}'.format(modes, self.index))
-
-        self.scale = (1 / (in_channels * out_channels))
-        self.weights = nn.Parameter(
-            self.scale * torch.rand(len(self.index), num_heads, in_channels // num_heads, out_channels // num_heads, dtype=torch.cfloat))
-
-    def forward(self, q, k, v, mask):
-        # size = [B, L, H, E]
-        B, L, H, E = q.shape
-        x = q.to(torch.float32)
-        # Compute Fourier coefficients
-        x_ft = torch.fft.rfft(x, dim=1)
-        freq_len = x_ft.size(-1)
-        # index is sorted; searchsorted counts how many entries are < freq_len
-        valid = self.index < freq_len
-        index = self.index[valid]
-        # Perform Fourier neural operations
-        out_ft = x_ft.new_zeros((B, freq_len, H, E))
-        out_ft[:, valid] = torch.einsum("blhi,lhio->blho", x_ft[:, index], self.weights[valid])
-        # Return to time domain
-        x = torch.fft.irfft(out_ft, n=L, dim=1).to(x.dtype)
-        return (x, None)
-
-
-import math
-import torch
-import torch.nn as nn
-
-
 class FourierBlock(nn.Module):
     """
     Packed Fourier block: selected true modes are written into the first K bins.
@@ -75,12 +33,6 @@ class FourierBlock(nn.Module):
     Options (any combination works):
       - fft_norm: FFT normalization ("backward"/"forward"/"ortho" or None)
       - w_init: "random" (scaled rand) or "randn" (fan-in-ish complex normal)
-      - residual: add residual at the end (only if Ein==Eout)
-      - freq_norm_mode: None (no norm) or {"sqrt","linear"} based on true freq index i
-      - lrfop: low-rank per-frequency operator (rank r)
-      - gate_mlp: small gate MLP
-          * if lrfop=True: produces smooth per-(freq,head,rank) gates for U/V
-          * if lrfop=False: produces smooth scalar gate per frequency (multiplies out_sel)
 
     Layout:
       q: (B, L, H, Ein)
@@ -98,15 +50,6 @@ class FourierBlock(nn.Module):
         mode_select_method: str = "random",
         fft_norm: str = "backward",
         w_init: str = "random",
-        freq_norm_mode: str | None = None,  # None -> no normalization
-        lrfop: bool = False,
-        gate_mlp: bool = False,
-        # gate-mlp params
-        gate_hidden: int = 32,
-        gate_act: str = "silu",
-        gate_scale: float = 1.0,
-        # low-rank params
-        rank: int = 8,
     ):
         super().__init__()
         assert in_channels % num_heads == 0, "in_channels must be divisible by num_heads"
@@ -119,50 +62,22 @@ class FourierBlock(nn.Module):
 
         self.fft_norm = None if fft_norm in (None, "backward") else fft_norm
         self.w_init = w_init
-        self.freq_norm_mode = freq_norm_mode
-        self.lrfop = lrfop
-        self.gate_mlp_enabled = gate_mlp
 
         # modes on frequency domain (sorted)
         index = get_frequency_modes(seq_len, modes=modes, mode_select_method=mode_select_method)
         self.register_buffer("index", torch.as_tensor(index, dtype=torch.long))
 
         # params
-        self.scale = 1.0 / (in_channels * out_channels)
+        scale = 1.0 / (in_channels * out_channels)
+        # Full per-frequency complex operator: (K, H, Ein, Eout)
+        self.weights = nn.Parameter(torch.empty(len(self.index), num_heads, self.Ein, self.Eout, dtype=torch.cfloat))
+        self._init_complex_(self.weights, fan_in=self.Ein, scale=scale)
 
-        if not self.lrfop:
-            # Full per-frequency complex operator: (K, H, Ein, Eout)
-            self.weights = nn.Parameter(torch.empty(len(self.index), num_heads, self.Ein, self.Eout, dtype=torch.cfloat))
-            self._init_complex_(self.weights, fan_in=self.Ein)
-        else:
-            self.rank = int(rank)
-            if self.rank <= 0:
-                raise ValueError("rank must be positive when lrfop=True")
-
-            # Shared base factors (H, Ein, r) and (H, Eout, r)
-            self.U0 = nn.Parameter(torch.empty(num_heads, self.Ein, self.rank, dtype=torch.cfloat))
-            self.V0 = nn.Parameter(torch.empty(num_heads, self.Eout, self.rank, dtype=torch.cfloat))
-            self._init_complex_lowrank_(self.U0, self.V0)
-
-        # gate MLP (works for both lrfop and non-lrfop)
-        if self.gate_mlp_enabled:
-            act_cls = {"silu": nn.SiLU, "gelu": nn.GELU, "relu": nn.ReLU, "tanh": nn.Tanh}.get(gate_act)
-            if act_cls is None:
-                raise ValueError(f"Unsupported gate_act={gate_act}. Use one of: silu, gelu, relu, tanh.")
-            self.gate_scale = float(gate_scale)
-
-            out_dim = (2 * num_heads * self.rank) if self.lrfop else 1
-            self.gate_mlp = nn.Sequential(
-                nn.Linear(1, gate_hidden),
-                act_cls(),
-                nn.Linear(gate_hidden, out_dim),
-            )
-
-    def _init_complex_(self, p: torch.Tensor, fan_in: int) -> None:
+    def _init_complex_(self, p: torch.Tensor, fan_in: int, scale: float) -> None:
         if self.w_init == "random":
             with torch.no_grad():
-                p.real.uniform_(0.0, 1.0).mul_(self.scale)
-                p.imag.uniform_(0.0, 1.0).mul_(self.scale)
+                p.real.uniform_(0.0, 1.0).mul_(scale)
+                p.imag.uniform_(0.0, 1.0).mul_(scale)
         elif self.w_init == "randn":
             std = 1.0 / math.sqrt(max(fan_in, 1))
             with torch.no_grad():
@@ -170,40 +85,6 @@ class FourierBlock(nn.Module):
                 p.imag.normal_(0.0, std)
         else:
             raise ValueError("w_init must be 'random' or 'randn'")
-
-    def _init_complex_lowrank_(self, U0: torch.Tensor, V0: torch.Tensor) -> None:
-        u_std = 1.0 / math.sqrt(max(self.Ein, 1))
-        v_std = 1.0 / math.sqrt(max(self.rank, 1))
-        if self.w_init == "random":
-            with torch.no_grad():
-                U0.real.uniform_(-1.0, 1.0).mul_(0.5 * u_std)
-                U0.imag.uniform_(-1.0, 1.0).mul_(0.5 * u_std)
-                V0.real.uniform_(-1.0, 1.0).mul_(0.5 * v_std)
-                V0.imag.uniform_(-1.0, 1.0).mul_(0.5 * v_std)
-        elif self.w_init == "randn":
-            with torch.no_grad():
-                U0.real.normal_(0.0, u_std)
-                U0.imag.normal_(0.0, u_std)
-                V0.real.normal_(0.0, v_std)
-                V0.imag.normal_(0.0, v_std)
-        else:
-            raise ValueError("w_init must be 'random' or 'randn'")
-
-    def _freq_scale(self, idx: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
-        # idx: (K,) true frequency bins
-        if self.freq_norm_mode is None:
-            return torch.ones_like(idx, dtype=dtype)
-        x = idx.to(dtype) + 1.0
-        if self.freq_norm_mode == "sqrt":
-            return torch.rsqrt(x)   # 1/sqrt(i+1)
-        if self.freq_norm_mode == "linear":
-            return 1.0 / x          # 1/(i+1)
-        raise ValueError(f"Unsupported freq_norm_mode={self.freq_norm_mode}")
-
-    def _freq_pos(self, idx: torch.Tensor, F: int, dtype: torch.dtype) -> torch.Tensor:
-        # normalized true frequency position in [0,1]
-        denom = float(max(F - 1, 1))
-        return (idx.to(dtype) / denom).view(idx.numel(), 1)
 
     def forward(self, q, k, v, mask):
         # q: (B, L, H, Ein) -> y: (B, L, H, Eout)
@@ -226,53 +107,18 @@ class FourierBlock(nn.Module):
         # Gather selected bins: (B, K, H, Ein)
         x_sel = x_ft.index_select(dim=1, index=idx)
 
-        # Optional frequency-index normalization (based on true idx)
-        if self.freq_norm_mode is not None:
-            fs = self._freq_scale(idx, dtype=x_sel.real.dtype)
-            x_sel = x_sel * fs.view(1, K, 1, 1)
-
         # Output spectrum: (B, F, H, Eout)
         out_ft = x_ft.new_zeros((B, F, H, self.Eout))
 
-        if not self.lrfop:
-            # Full operator: (B,K,H,Ein) x (K,H,Ein,Eout) -> (B,K,H,Eout)
-            W = self.weights[valid_mask]  # (K,H,Ein,Eout)
-            out_sel = torch.einsum("bkhi,khio->bkho", x_sel, W)
-
-            # Optional scalar gating per frequency (smooth in true freq)
-            if self.gate_mlp_enabled:
-                z = self._freq_pos(idx, F, dtype=out_sel.real.dtype)  # (K,1)
-                g = self.gate_mlp(z).squeeze(-1) * self.gate_scale    # (K,)
-                gamma = torch.sigmoid(g).view(1, K, 1, 1)             # (1,K,1,1) in (0,1)
-                out_sel = out_sel * gamma
-
-        else:
-            # Low-rank with optional smooth gating
-            if self.gate_mlp_enabled:
-                z = self._freq_pos(idx, F, dtype=x_sel.real.dtype)     # (K,1)
-                gates = self.gate_mlp(z) * self.gate_scale             # (K, 2*H*r)
-                gates = gates.view(K, 2, H, self.rank)
-
-                # bounded gates around 1.0 for stability
-                alpha = 1.0 + torch.tanh(gates[:, 0])  # (K,H,r)
-                beta  = 1.0 + torch.tanh(gates[:, 1])  # (K,H,r)
-
-                U = self.U0.unsqueeze(0) * alpha.unsqueeze(2)          # (K,H,Ein,r)
-                V = self.V0.unsqueeze(0) * beta.unsqueeze(2)           # (K,H,Eout,r)
-            else:
-                U = self.U0.unsqueeze(0).expand(K, -1, -1, -1)         # (K,H,Ein,r)
-                V = self.V0.unsqueeze(0).expand(K, -1, -1, -1)         # (K,H,Eout,r)
-
-            # One-einsum low-rank apply:
-            # out[b,k,h,o] = sum_{i,r} x_sel[b,k,h,i] * U[k,h,i,r] * V[k,h,o,r]
-            out_sel = torch.einsum("bkhi,khir,khor->bkho", x_sel, U, V)
+        # Full operator: (B,K,H,Ein) x (K,H,Ein,Eout) -> (B,K,H,Eout)
+        W = self.weights[:K]  # (K,H,Ein,Eout)
+        out_sel = torch.einsum("bkhi,khio->bkho", x_sel, W)
 
         # PACK into first K frequency bins (intentional)
         out_ft[:, :K] = out_sel
 
         # Back to time: (B, L, H, Eout)
         y = torch.fft.irfft(out_ft, n=L, dim=1, norm=self.fft_norm).to(x_in.dtype)
-
         return (y, None)
 
 

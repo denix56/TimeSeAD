@@ -32,9 +32,6 @@ class FEDformer(BaseModel):
             modes: int=32,
             fft_norm: str = "backward",
             w_init: str = "random",
-            freq_norm_mode: str | None = None,  # None -> no normalization
-            lrfop: bool = False,
-            gate_mlp: bool = False,
         ) -> None:
         """
         version: str, for FEDformer, there are two versions to choose, options: [Fourier, Wavelets].
@@ -63,9 +60,6 @@ class FEDformer(BaseModel):
                                             mode_select_method=self.mode_select,
                                             fft_norm=fft_norm,
                                             w_init=w_init,
-                                            freq_norm_mode=freq_norm_mode,
-                                            lrfop=lrfop,
-                                            gate_mlp=gate_mlp
                                             )
         # Encoder
         self.encoder = Encoder(
