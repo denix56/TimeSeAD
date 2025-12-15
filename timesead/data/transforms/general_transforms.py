@@ -156,7 +156,7 @@ class _BaseInputTransform(Transform):
         return inputs, targets
 
 
-class TSMagAddNoise(_BaseInputTransform):
+class MagAddNoiseTransform(_BaseInputTransform):
     """Apply additive noise scaled by the local magnitude of the signal."""
 
     def __init__(self, parent: Transform, magnitude: float = 1.0):
@@ -173,7 +173,7 @@ class TSMagAddNoise(_BaseInputTransform):
         return tensor + noise * std * self.magnitude
 
 
-class TSMagScale(_BaseInputTransform):
+class MagScaleTransform(_BaseInputTransform):
     """Randomly scale the input magnitude."""
 
     def __init__(self, parent: Transform, magnitude: float = 0.5):
@@ -189,7 +189,7 @@ class TSMagScale(_BaseInputTransform):
         return tensor * scale
 
 
-class TSTimeWarp(_BaseInputTransform):
+class TimeWarpTransform(_BaseInputTransform):
     """Apply a smooth random time warping to the sequence."""
 
     def __init__(self, parent: Transform, magnitude: float = 0.1, order: int = 6):
@@ -214,7 +214,7 @@ class TSTimeWarp(_BaseInputTransform):
         return _linear_interpolate_sequence(tensor, warped_positions)
 
 
-class TSMaskOut(_BaseInputTransform):
+class MaskOutTransform(_BaseInputTransform):
     """Mask out random values along the time dimension."""
 
     def __init__(self, parent: Transform, magnitude: float = 0.1, compensate: bool = False):
@@ -234,7 +234,7 @@ class TSMaskOut(_BaseInputTransform):
         return tensor.masked_fill(mask, 0)
 
 
-class TSTranslateX(_BaseInputTransform):
+class TranslateXTransform(_BaseInputTransform):
     """Translate the sequence along the time axis by a random offset."""
 
     def __init__(self, parent: Transform, magnitude: float = 0.1):
