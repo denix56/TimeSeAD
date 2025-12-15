@@ -3,11 +3,11 @@ from .general_transforms import (
     CacheTransform,
     LimitTransform,
     SubsampleTransform,
-    TSMagAddNoise,
-    TSMagScale,
-    TSMaskOut,
-    TSTimeWarp,
-    TSTranslateX,
+    MagAddNoiseTransform,
+    MagScaleTransform,
+    MaskOutTransform,
+    TimeWarpTransform,
+    TranslateXTransform,
 )
 from .target_transforms import ReconstructionTargetTransform, OneVsRestTargetTransform, PredictionTargetTransform, \
     OverlapPredictionTargetTransform
