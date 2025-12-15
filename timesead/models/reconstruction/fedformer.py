@@ -1,8 +1,6 @@
 # Implementation derived from Time Series Library https://github.com/thuml/Time-Series-Library
 from typing import Tuple
 
-import math
-
 import torch
 import torch.nn as nn
 
