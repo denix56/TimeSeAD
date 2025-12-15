@@ -147,10 +147,17 @@ class LimitTransform(Transform):
 class _BaseInputTransform(Transform):
     """Utility base class for transforms that only modify the inputs."""
 
+    def __init__(self, parent: Transform, apply_prob: float = 1.0):
+        super().__init__(parent)
+        self.apply_prob = apply_prob
+
     def _transform_input(self, tensor: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
+        if random.random() >= self.apply_prob:
+            return self.parent.get_datapoint(item)
+
         inputs, targets = self.parent.get_datapoint(item)
         inputs = tuple(self._transform_input(inp) for inp in inputs)
         return inputs, targets
@@ -159,8 +166,8 @@ class _BaseInputTransform(Transform):
 class MagAddNoiseTransform(_BaseInputTransform):
     """Apply additive noise scaled by the local magnitude of the signal."""
 
-    def __init__(self, parent: Transform, magnitude: float = 1.0):
-        super().__init__(parent)
+    def __init__(self, parent: Transform, magnitude: float = 1.0, apply_prob: float = 1.0):
+        super().__init__(parent, apply_prob)
         self.magnitude = magnitude
 
     def _transform_input(self, tensor: torch.Tensor) -> torch.Tensor:
@@ -176,8 +183,8 @@ class MagAddNoiseTransform(_BaseInputTransform):
 class MagScaleTransform(_BaseInputTransform):
     """Randomly scale the input magnitude."""
 
-    def __init__(self, parent: Transform, magnitude: float = 0.5):
-        super().__init__(parent)
+    def __init__(self, parent: Transform, magnitude: float = 0.5, apply_prob: float = 1.0):
+        super().__init__(parent, apply_prob)
         self.magnitude = magnitude
 
     def _transform_input(self, tensor: torch.Tensor) -> torch.Tensor:
@@ -192,8 +199,8 @@ class MagScaleTransform(_BaseInputTransform):
 class TimeWarpTransform(_BaseInputTransform):
     """Apply a smooth random time warping to the sequence."""
 
-    def __init__(self, parent: Transform, magnitude: float = 0.1, order: int = 6):
-        super().__init__(parent)
+    def __init__(self, parent: Transform, magnitude: float = 0.1, order: int = 6, apply_prob: float = 1.0):
+        super().__init__(parent, apply_prob)
         self.magnitude = magnitude
         self.order = order
 
@@ -217,8 +224,8 @@ class TimeWarpTransform(_BaseInputTransform):
 class MaskOutTransform(_BaseInputTransform):
     """Mask out random values along the time dimension."""
 
-    def __init__(self, parent: Transform, magnitude: float = 0.1, compensate: bool = False):
-        super().__init__(parent)
+    def __init__(self, parent: Transform, magnitude: float = 0.1, compensate: bool = False, apply_prob: float = 1.0):
+        super().__init__(parent, apply_prob)
         self.magnitude = magnitude
         self.compensate = compensate
 
@@ -237,8 +244,8 @@ class MaskOutTransform(_BaseInputTransform):
 class TranslateXTransform(_BaseInputTransform):
     """Translate the sequence along the time axis by a random offset."""
 
-    def __init__(self, parent: Transform, magnitude: float = 0.1):
-        super().__init__(parent)
+    def __init__(self, parent: Transform, magnitude: float = 0.1, apply_prob: float = 1.0):
+        super().__init__(parent, apply_prob)
         self.magnitude = magnitude
 
     def _transform_input(self, tensor: torch.Tensor) -> torch.Tensor:
