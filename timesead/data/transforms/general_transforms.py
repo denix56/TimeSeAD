@@ -35,19 +35,15 @@ def _linear_interpolate_sequence(x: torch.Tensor, positions: torch.Tensor) -> to
 
 
 class SubsampleTransform(Transform):
-    """
-    Subsample sequences by a specified factor. `subsampling_factor` consecutive datapoints in a sequence will be
-    aggregated into one point using the `aggregation` function.
+    """Subsample sequences by aggregating consecutive observations.
+
+    :param parent: Another :class:`~timesead.data.transforms.Transform` which is used as the data source for this
+        :class:`~timesead.data.transforms.Transform`.
+    :param subsampling_factor: Number of consecutive data points that will be aggregated into a single output point.
+    :param aggregation: Aggregation strategy for each subsampling window. Can be either ``"mean"``, ``"last"`` or
+        ``"first"``.
     """
     def __init__(self, parent: Transform, subsampling_factor: int, aggregation: str = 'first'):
-        """
-
-        :param parent: Another :class:`~timesead.data.transforms.Transform` which is used as the data source for this
-            :class:`~timesead.data.transforms.Transform`.
-        :param subsampling_factor: This specifies the number of consecutive data points that will be aggregated.
-        :param aggregation: The function that should be applied to aggregate a window of data points.
-           Can be either 'mean', 'last' or 'first'.
-        """
         super(SubsampleTransform, self).__init__(parent)
 
         self.subsampling_factor = subsampling_factor
@@ -93,9 +89,10 @@ class SubsampleTransform(Transform):
 
 
 class CacheTransform(Transform):
-    """
-    Caches the results from a previous :class:`~timesead.data.transforms.Transform` in memory so that expensive
-    calculations do not have to be recomputed.
+    """Cache results from the parent transform to avoid recomputation.
+
+    :param parent: Another :class:`~timesead.data.transforms.Transform` which is used as the data source for this
+        :class:`~timesead.data.transforms.Transform`.
     """
     def __init__(self, parent: Transform):
         """
@@ -118,8 +115,10 @@ class CacheTransform(Transform):
 
 
 class LimitTransform(Transform):
-    """
-    Limits the amount of data points returned.
+    """Limit the maximum number of datapoints exposed by a dataset chain.
+
+    :param parent: Upstream :class:`~timesead.data.transforms.Transform` that provides datapoints.
+    :param max_count: Maximum number of datapoints that can be accessed.
     """
     def __init__(self, parent: Transform, count: int):
         """
@@ -165,7 +164,19 @@ class _BaseInputTransform(Transform):
 
 
 class MagAddNoiseTransform(_BaseInputTransform):
-    """Apply additive noise scaled by the local magnitude of the signal."""
+    r"""Apply additive Gaussian noise scaled by the local signal magnitude.
+
+    The transform perturbs each timestep ``x_t`` with zero-mean Gaussian noise scaled by the standard deviation of
+    the finite differences ``\sigma`` and the configured ``magnitude`` factor ``\lambda``:
+
+    .. math::
+
+       x'_t = x_t + \epsilon_t \cdot \sigma \cdot \lambda, \qquad \epsilon_t \sim \mathcal{N}(0, 1/3).
+
+    :param parent: Upstream :class:`~timesead.data.transforms.Transform` that provides datapoints.
+    :param magnitude: Scaling factor ``\lambda`` applied to the estimated standard deviation.
+    :param apply_prob: Probability of applying the noise to a datapoint.
+    """
 
     def __init__(self, parent: Transform, magnitude: float = 1.0, apply_prob: float = 1.0):
         super().__init__(parent, apply_prob)
@@ -182,7 +193,24 @@ class MagAddNoiseTransform(_BaseInputTransform):
 
 
 class MagScaleTransform(_BaseInputTransform):
-    """Randomly scale the input magnitude."""
+    r"""Randomly scale the input magnitude by a sampled factor.
+
+    A random non-negative draw ``r`` from a half-normal distribution determines the scale ``s``; with probability
+    :math:`\tfrac{1}{3}` the series is amplified and otherwise attenuated:
+
+    .. math::
+
+       s = \begin{cases}
+           1 + r \cdot \lambda & \text{if } u < \tfrac{1}{3} \\
+           1 - \tfrac{r \cdot \lambda}{2} & \text{otherwise}
+       \end{cases}
+
+    yielding the transformed series :math:`x'_t = s \cdot x_t`.
+
+    :param parent: Upstream :class:`~timesead.data.transforms.Transform` that provides datapoints.
+    :param magnitude: Magnitude ``\lambda`` controlling the maximum deviation from the original scale.
+    :param apply_prob: Probability of applying the scaling to a datapoint.
+    """
 
     def __init__(self, parent: Transform, magnitude: float = 0.5, apply_prob: float = 1.0):
         super().__init__(parent, apply_prob)
@@ -198,7 +226,22 @@ class MagScaleTransform(_BaseInputTransform):
 
 
 class TimeWarpTransform(_BaseInputTransform):
-    """Apply a smooth random time warping to the sequence."""
+    r"""Apply a smooth random time warping to the sequence.
+
+    A cumulative random curve ``w`` defines new monotonically increasing sampling positions ``\tau_t`` that blend the
+    original time index ``t`` with the normalized curve using the magnitude ``\lambda``:
+
+    .. math::
+
+       \tau_t = (1 - \lambda) \cdot t + \lambda \cdot w_t \cdot (T - 1),
+
+    and the output is obtained through linear interpolation :math:`x'_t = x(\tau_t)`.
+
+    :param parent: Upstream :class:`~timesead.data.transforms.Transform` that provides datapoints.
+    :param magnitude: Warping intensity ``\lambda`` in ``[0, 1]``.
+    :param order: Number of random basis curves used to construct the warp field.
+    :param apply_prob: Probability of applying the warp to a datapoint.
+    """
 
     def __init__(self, parent: Transform, magnitude: float = 0.1, order: int = 6, apply_prob: float = 1.0):
         super().__init__(parent, apply_prob)
@@ -223,7 +266,20 @@ class TimeWarpTransform(_BaseInputTransform):
 
 
 class MaskOutTransform(_BaseInputTransform):
-    """Mask out random values along the time dimension."""
+    r"""Mask out random values along the time dimension.
+
+    Each element is independently dropped with probability ``\lambda`` using a Bernoulli mask ``m_t``. The optional
+    compensation rescales the surviving values to preserve the expected magnitude:
+
+    .. math::
+
+       x'_t = (1 - m_t) \cdot x_t \cdot \frac{1}{1 - \lambda} \quad \text{if compensate, else} \quad x'_t = (1 - m_t) \cdot x_t.
+
+    :param parent: Upstream :class:`~timesead.data.transforms.Transform` that provides datapoints.
+    :param magnitude: Masking probability ``\lambda`` for each element.
+    :param compensate: Whether to renormalize unmasked values by ``\tfrac{1}{1-\lambda}``.
+    :param apply_prob: Probability of applying the masking to a datapoint.
+    """
 
     def __init__(self, parent: Transform, magnitude: float = 0.1, compensate: bool = False, apply_prob: float = 1.0):
         super().__init__(parent, apply_prob)
@@ -243,7 +299,22 @@ class MaskOutTransform(_BaseInputTransform):
 
 
 class TranslateXTransform(_BaseInputTransform):
-    """Translate the sequence along the time axis by a random offset."""
+    r"""Translate the sequence along the time axis by a random offset.
+
+    A shift length ``k`` is sampled from a symmetric beta distribution scaled by the sequence length ``T``. The output
+    sequence is defined as
+
+    .. math::
+
+       x'_t = \begin{cases}
+           x_{t-k} & 0 \leq t-k < T \\
+           0 & \text{otherwise}
+       \end{cases}
+
+    :param parent: Upstream :class:`~timesead.data.transforms.Transform` that provides datapoints.
+    :param magnitude: Beta distribution concentration parameter controlling the expected shift proportion.
+    :param apply_prob: Probability of applying the translation to a datapoint.
+    """
 
     def __init__(self, parent: Transform, magnitude: float = 0.1, apply_prob: float = 1.0):
         super().__init__(parent, apply_prob)
