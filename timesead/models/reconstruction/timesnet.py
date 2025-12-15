@@ -46,6 +46,7 @@ class TimesBlock(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, T, N = x.size()
         x = x.mT.contiguous()
+        assert T == self.seq_len, f"{B} {T} {N} {self.seq_len}"
         periods, period_weight = FFT_for_Period(x, self.top_k)
         res = []
         for period in periods:
