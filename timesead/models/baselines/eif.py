@@ -70,7 +70,16 @@ class EIFAD(AnomalyDetector):
         self.n_jobs = n_jobs
         self.verbose = verbose
         self.input_shape = input_shape
-        self.model = None
+        self.model = ExtendedIsolationForest(
+            n_estimators=self.n_trees,
+            max_samples=self.sample_size,
+            contamination=self.contamination,
+            max_features=self.max_features,
+            bootstrap=self.bootstrap,
+            feature_combinations=self.feature_combinations,
+            n_jobs=self.n_jobs,
+            verbose=self.verbose
+        )
 
     def fit(self, dataset: torch.utils.data.DataLoader) -> None:
         # Merge all batches as batch processing is not possible
@@ -83,18 +92,8 @@ class EIFAD(AnomalyDetector):
         data_full = torch.cat(data_full, dim=0)
 
         data = data_full.cpu().detach().numpy().astype(np.float32)
-        with parallel_backend("threading"):
-            model = ExtendedIsolationForest(
-            n_estimators=self.n_trees,
-            max_samples=self.sample_size,
-            contamination=self.contamination,
-            max_features=self.max_features,
-            bootstrap=self.bootstrap,
-            feature_combinations=self.feature_combinations,
-            n_jobs=self.n_jobs,
-            verbose=self.verbose
-            )
-            self.model = model.fit(data)
+
+        self.model = self.model.fit(data)
 
     def compute_online_anomaly_score(
         self, inputs: Tuple[torch.Tensor, ...]

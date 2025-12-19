@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 torch._dynamo.config.capture_scalar_outputs = True
+torch._dynamo.config.capture_dynamic_output_shape_ops = True
 
 
 def get_frequency_modes(seq_len, modes=64, mode_select_method='random'):
@@ -152,11 +153,13 @@ class FourierBlock(nn.Module):
         x_ft = torch.fft.rfft(x, dim=1, norm=self.fft_norm)
         F = x_ft.size(1)
 
+        assert F == L // 2 + 1
+
         valid_mask = self.index < F
         idx = self.index[valid_mask]  # (K,)
         K = idx.numel()
-        if K == 0:
-            return (x_in, None)
+
+        assert K > 0
 
         # Gather selected bins: (B, K, H, Ein)
         x_sel = x_ft.index_select(dim=1, index=idx)
@@ -187,7 +190,7 @@ class FourierBlock(nn.Module):
         out_ft[:, :K] = out_sel
 
         # Back to time: (B, L, H, Eout)
-        y = torch.fft.irfft(out_ft, n=L, dim=1, norm=self.fft_norm).to(x_in.dtype)
+        y = torch.fft.irfft(out_ft.permute(0, 2, 3, 1), n=L, dim=-1, norm=self.fft_norm).permute(0, 3, 1, 2).to(x_in.dtype)
 
         return (y, None)
 
