@@ -30,14 +30,35 @@ def get_frequency_modes(seq_len, modes=64, mode_select_method='random'):
 
 class FourierBlock(nn.Module):
     """
-    Packed Fourier block: selected true modes are written into the first K bins.
+    Packed Fourier block: selected true modes are written into the first :math:`K` bins.
 
     Options (any combination works):
-      - fft_norm: FFT normalization ("backward"/"forward"/"ortho" or None)
-      - w_init: "random" (scaled rand) or "randn" (fan-in-ish complex normal)
-      - residual: add residual at the end (only if Ein==Eout)
-      - freq_norm_mode: None (no norm) or {"sqrt","linear"} based on true freq index i
-      - lrfop: low-rank per-frequency operator (rank r)
+
+    - **fft_norm**: FFT normalization (``"backward"``/``"forward"``/``"ortho"`` or
+      ``None``). The choice controls the scaling of the discrete transform
+      :math:`\hat{x}_k = \sum_{n=0}^{L-1} x_n e^{-2\pi i n k / L}`. "forward" divides
+      by :math:`L`, keeping Parseval's identity :math:`\lVert x\rVert_2^2 = \lVert\hat{x}\rVert_2^2`
+      exact; "backward" leaves :math:`\hat{x}` unscaled and applies the division in the
+      inverse; "ortho" uses :math:`1/\sqrt{L}` in both directions to make the FFT unitary
+      when the block should behave like an energy-preserving linear layer.
+    - **w_init**: ``"random"`` (scaled rand) or ``"randn"`` (fan-in-ish complex normal).
+      Both initialize complex weights but with different priors. The Gaussian option samples
+      :math:`\Re W, \Im W \sim \mathcal{N}(0, 1/\text{fan\_in})` so that
+      :math:`\mathbb{E}\lVert Wx\rVert_2^2 \approx \lVert x\rVert_2^2` at initialization, while
+      the uniform variant keeps magnitudes small and unbiased via scaled
+      :math:`\mathcal{U}(0,1)` draws.
+    - **freq_norm_mode**: ``None`` (no norm) or {``"sqrt"``, ``"linear"``} based on the true
+      frequency index :math:`i`. Each selected coefficient is multiplied by
+      :math:`\alpha_i = 1/\sqrt{i+1}` ("sqrt") or :math:`\alpha_i = 1/(i+1)` ("linear"), imposing
+      a :math:`1/f` or :math:`1/\sqrt{f}` spectral prior that attenuates high-frequency bins and
+      biases the block toward smoother seasonal signals.
+    - **lrfop**: low-rank per-frequency operator (rank :math:`r`). Instead of a dense
+      :math:`\text{Ein}\times\text{Eout}` matrix per Fourier mode, the block factors it into
+      :math:`W_i = U V^\top` with :math:`U\in\mathbb{C}^{\mathrm{Ein}\times r}` and
+      :math:`V\in\mathbb{C}^{\mathrm{Eout}\times r}` shared across modes. This reduces parameters
+      from :math:`\mathcal{O}(K\,\mathrm{Ein}\,\mathrm{Eout})` to
+      :math:`\mathcal{O}((\mathrm{Ein}+\mathrm{Eout})\,r)` and encourages smoother, lower-rank
+      responses over frequency.
 
     Layout:
       q: (B, L, H, Ein)
