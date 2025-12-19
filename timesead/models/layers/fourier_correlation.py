@@ -1,8 +1,3 @@
-# Implementation derived from Time Series Library https://github.com/thuml/Time-Series-Library
-# coding=utf-8
-# author=maziqing
-# email=maziqing.mzq@alibaba-inc.com
-
 from __future__ import annotations
 
 import math
@@ -15,11 +10,6 @@ torch._dynamo.config.capture_dynamic_output_shape_ops = True
 
 
 def get_frequency_modes(seq_len, modes=64, mode_select_method="random"):
-    """
-    get modes on frequency domain:
-    'random' means sampling randomly;
-    'else' means sampling the lowest modes;
-    """
     modes = min(int(modes), seq_len // 2)
     if modes <= 0:
         return np.empty((0,), dtype=np.int64)
@@ -38,19 +28,16 @@ class FourierBlock(nn.Module):
     """
     Packed Fourier block: selected true modes are written into the first K bins.
 
-    Added policies for frequency selection:
+    Selection policies:
       - "static": use precomputed self.index (original behavior)
-      - "topk_batch": dynamic Top-k by energy from current batch
-      - "topk_running": dynamic Top-k by EMA running energy
-      - "hybrid_batch": always include static modes, fill remaining with Top-k (current batch)
-      - "hybrid_running": always include static modes, fill remaining with Top-k (EMA running)
+      - "topk_batch": Top-k by energy from current batch
+      - "topk_running": Top-k by EMA running energy
+      - "hybrid_batch": union(static, topk_batch) with order = [static, topk_new], truncated/padded to K
+      - "hybrid_running": union(static, topk_running) with same rule
 
-    Options (any combination works):
-      - fft_norm: FFT normalization ("backward"/"forward"/"ortho" or None)
-      - w_init: "random" (scaled rand) or "randn" (fan-in-ish complex normal)
-      - freq_norm_mode: None (no norm) or {"sqrt","linear"} based on true freq index i
-      - lrfop: low-rank per-frequency operator (rank r)
-      - topk_per_head: if True, choose topk per head (more expressive, less stable)
+    Notes:
+      - For best compile stability, keep topk_per_head=False (shared indices across heads).
+      - If lrfop=False, weights are sized to max(len(index), topk) to avoid einsum K mismatch.
     """
 
     def __init__(
@@ -63,20 +50,20 @@ class FourierBlock(nn.Module):
         mode_select_method: str = "random",
         fft_norm: str | None = "backward",
         w_init: str = "random",
-        freq_norm_mode: str | None = None,  # None -> no normalization
+        freq_norm_mode: str | None = None,
         lrfop: bool = False,
         rank: int = 8,
-        # ---- optional top-k selection / hybrid ----
+        # --- selection ---
         mode_policy: str = "static",  # {"static","topk_batch","topk_running","hybrid_batch","hybrid_running"}
-        topk: int = 0,                # if >0, used by topk*/hybrid* policies
+        topk: int = 0,
         topk_exclude_dc: bool = True,
         topk_exclude_nyquist: bool = False,
-        topk_per_head: bool = False,  # False => shared across heads; True => per-head
-        topk_ema: float = 0.9,        # only for *_running
+        topk_per_head: bool = False,  # supported, but hybrid is implemented most robustly with False
+        topk_ema: float = 0.9,
     ):
         super().__init__()
-        assert in_channels % num_heads == 0, "in_channels must be divisible by num_heads"
-        assert out_channels % num_heads == 0, "out_channels must be divisible by num_heads"
+        assert in_channels % num_heads == 0
+        assert out_channels % num_heads == 0
 
         self.seq_len = int(seq_len)
         self.num_heads = int(num_heads)
@@ -84,11 +71,10 @@ class FourierBlock(nn.Module):
         self.Eout = out_channels // num_heads
 
         self.fft_norm = None if fft_norm in (None, "backward") else fft_norm
-        self.w_init = w_init
+        self.w_init = str(w_init)
         self.freq_norm_mode = freq_norm_mode
         self.lrfop = bool(lrfop)
 
-        # ---- selection config ----
         self.mode_policy = str(mode_policy)
         self.topk = int(topk)
         self.topk_exclude_dc = bool(topk_exclude_dc)
@@ -96,33 +82,30 @@ class FourierBlock(nn.Module):
         self.topk_per_head = bool(topk_per_head)
         self.topk_ema = float(topk_ema)
 
-        # modes on frequency domain (sorted)
         index = get_frequency_modes(self.seq_len, modes=modes, mode_select_method=mode_select_method)
         self.register_buffer("index", torch.as_tensor(index, dtype=torch.long))
 
-        # params
         self.scale = 1.0 / (in_channels * out_channels)
 
+        # IMPORTANT FIX #1: ensure we have at least max_slots rows for dynamic K
+        static_slots = int(self.index.numel())
+        dynamic_slots = int(self.topk) if self.topk > 0 else 0
+        self.max_slots = max(static_slots, dynamic_slots, 1)
+
         if not self.lrfop:
-            # Full per-frequency complex operator: (K, H, Ein, Eout)
             self.weights = nn.Parameter(
-                torch.empty(len(self.index), self.num_heads, self.Ein, self.Eout, dtype=torch.cfloat)
+                torch.empty(self.max_slots, self.num_heads, self.Ein, self.Eout, dtype=torch.cfloat)
             )
             self._init_complex_(self.weights, fan_in=self.Ein)
         else:
             self.rank = int(rank)
             if self.rank <= 0:
                 raise ValueError("rank must be positive when lrfop=True")
-
-            # Shared base factors (H, Ein, r) and (H, Eout, r)
             self.U0 = nn.Parameter(torch.empty(self.num_heads, self.Ein, self.rank, dtype=torch.cfloat))
             self.V0 = nn.Parameter(torch.empty(self.num_heads, self.Eout, self.rank, dtype=torch.cfloat))
             self._init_complex_lowrank_(self.U0, self.V0)
 
-        # running spectrum score for *_running policies (initialized lazily once F is known)
         self.register_buffer("_running_score", torch.empty(0), persistent=False)
-
-    # ---------------- init helpers ----------------
 
     def _init_complex_(self, p: torch.Tensor, fan_in: int) -> None:
         if self.w_init == "random":
@@ -155,28 +138,27 @@ class FourierBlock(nn.Module):
         else:
             raise ValueError("w_init must be 'random' or 'randn'")
 
-    # ---------------- frequency helpers ----------------
-
     def _freq_scale(self, idx: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
-        # idx: (K,) true frequency bins
         if self.freq_norm_mode is None:
             return torch.ones_like(idx, dtype=dtype)
         x = idx.to(dtype) + 1.0
         if self.freq_norm_mode == "sqrt":
-            return torch.rsqrt(x)   # 1/sqrt(i+1)
+            return torch.rsqrt(x)
         if self.freq_norm_mode == "linear":
-            return 1.0 / x          # 1/(i+1)
+            return 1.0 / x
         raise ValueError(f"Unsupported freq_norm_mode={self.freq_norm_mode}")
 
-    def _compute_score(self, x_ft: torch.Tensor) -> torch.Tensor:
+    def _static_idx_valid(self, F: int) -> torch.Tensor:
+        if self.index.numel() == 0:
+            return self.index
+        return self.index[self.index < F]
+
+    def _score_bins(self, x_ft: torch.Tensor) -> torch.Tensor:
         """
-        x_ft: (B, F, H, Ein), complex
-        Returns:
-          score: (F,) if topk_per_head=False
-                 (H, F) if topk_per_head=True
+        x_ft: (B,F,H,Ein) complex
+        returns score: (F,) if topk_per_head=False else (H,F)
         """
-        # Energy per bin: |X|^2 summed over Ein, averaged over batch.
-        # Compute in float32 for stability.
+        B, F, H, Ein = x_ft.shape
         e = (x_ft.real.float().square() + x_ft.imag.float().square()).sum(dim=-1)  # (B,F,H)
 
         if self.topk_per_head:
@@ -184,9 +166,7 @@ class FourierBlock(nn.Module):
         else:
             score = e.mean(dim=0).mean(dim=-1).contiguous()     # (F,)
 
-        B, F, H, Ein = x_ft.shape
-
-        # Exclusions (set to -inf so they are never chosen by topk)
+        # exclusions
         if self.topk_exclude_dc:
             if self.topk_per_head:
                 score[:, 0] = -float("inf")
@@ -200,7 +180,7 @@ class FourierBlock(nn.Module):
             else:
                 score[nyq] = -float("inf")
 
-        # EMA running (optional)
+        # EMA running
         if self.mode_policy.endswith("_running"):
             with torch.no_grad():
                 if self._running_score.numel() == 0 or self._running_score.shape != score.shape:
@@ -211,216 +191,123 @@ class FourierBlock(nn.Module):
 
         return score
 
-    def _topk_indices_from_score(self, score: torch.Tensor, K: int) -> torch.Tensor:
-        """
-        score: (F,) or (H,F)
-        Returns:
-          idx: (K,) or (H,K), sorted=True as returned by torch.topk
-        """
+    def _topk_idx(self, score: torch.Tensor, K: int) -> torch.Tensor:
         if self.topk_per_head:
             return torch.topk(score, k=K, dim=-1, largest=True, sorted=True).indices  # (H,K)
         return torch.topk(score, k=K, dim=0, largest=True, sorted=True).indices      # (K,)
 
-    def _static_indices(self, F: int) -> torch.Tensor:
+    def _select_idx_shared(self, static_idx: torch.Tensor, top_idx: torch.Tensor, score: torch.Tensor, K: int) -> torch.Tensor:
         """
-        Returns static indices clipped to <F : (Ks,)
-        """
-        if self.index.numel() == 0:
-            return self.index
-        valid = self.index < F
-        return self.index[valid]
+        Hybrid selection (shared across heads), compile-friendly, no Python loops.
 
-    def _select_indices(self, x_ft: torch.Tensor) -> tuple[torch.Tensor, int, torch.Tensor | None]:
+        Order: [static_idx, top_idx_not_in_static, backfill_by_score_not_in_union] then truncate to K.
         """
-        Decide which true frequency bins to use.
+        device = static_idx.device
+        dtype = static_idx.dtype
 
-        Returns:
-          idx: (K,) or (H,K)
-          K: int
-          score: score tensor or None (for debug/optional uses)
-        """
+        static_idx = static_idx[:K]
+        n_static = static_idx.numel()
+
+        if n_static >= K:
+            return static_idx
+
+        # remove duplicates from top_idx wrt static
+        if n_static > 0:
+            mask_new = ~torch.isin(top_idx, static_idx)
+            top_new = top_idx[mask_new]
+        else:
+            top_new = top_idx
+
+        need = K - n_static
+        top_new = top_new[:need]
+
+        idx = torch.cat([static_idx, top_new], dim=0)
+
+        if idx.numel() >= K:
+            return idx[:K]
+
+        # backfill: take remaining highest-score bins not in idx
+        F = score.numel()
+        order = torch.argsort(score, descending=True)  # (F,)
+        mask_fill = ~torch.isin(order, idx)
+        fill = order[mask_fill][: (K - idx.numel())]
+
+        idx = torch.cat([idx, fill.to(device=device, dtype=dtype)], dim=0)
+        return idx[:K]
+
+    def _select_indices(self, x_ft: torch.Tensor) -> tuple[torch.Tensor, int]:
         B, F, H, Ein = x_ft.shape
 
-        policy = self.mode_policy
-        if policy == "static" or self.topk <= 0:
-            idx = self._static_indices(F)
+        # Static or no-topk
+        if self.mode_policy == "static" or self.topk <= 0:
+            idx = self._static_idx_valid(F)
             K = int(idx.numel())
             if K <= 0:
-                raise RuntimeError("No valid frequency modes selected (K=0) in static policy.")
-            return idx, K, None
+                raise RuntimeError("No valid static modes selected (K=0).")
+            return idx, K
 
-        if policy not in ("topk_batch", "topk_running", "hybrid_batch", "hybrid_running"):
-            raise ValueError(f"Unsupported mode_policy={policy}")
-
-        # Determine K to use in this forward pass
-        K = min(int(self.topk), F)
+        K = min(self.topk, F)
         if K <= 0:
-            raise RuntimeError("topk must be > 0 for topk*/hybrid* policies.")
+            raise RuntimeError("topk must be > 0 for dynamic policies")
 
-        score = self._compute_score(x_ft)  # (F,) or (H,F)
-        top_idx = self._topk_indices_from_score(score, K=K)  # (K,) or (H,K)
+        score = self._score_bins(x_ft)
+        top_idx = self._topk_idx(score, K=K)
 
-        if policy.startswith("topk_"):
-            return top_idx, K, score
+        if self.mode_policy.startswith("topk_"):
+            return top_idx, K
 
-        # Hybrid policies: always include static modes, fill remainder with top-k (no duplicates)
-        static_idx = self._static_indices(F)  # (Ks,)
-        Ks = int(static_idx.numel())
+        # Hybrid: for best compile stability, do shared selection.
+        # If you truly need per-head hybrid, I can provide it, but it is heavier.
+        if self.topk_per_head:
+            raise RuntimeError("hybrid_* with topk_per_head=True is intentionally disabled for compile stability.")
 
-        if Ks == 0:
-            return top_idx, K, score
-
-        if not self.topk_per_head:
-            # shared across heads: idx is (K,)
-            # 1) keep static (in ascending order), up to K
-            if Ks >= K:
-                return static_idx[:K], K, score
-
-            # 2) fill remaining with top-k, skipping duplicates
-            static_set = set(static_idx.tolist())
-            fill = []
-            for i in top_idx.tolist():
-                if i not in static_set:
-                    fill.append(i)
-                if len(fill) >= (K - Ks):
-                    break
-
-            # If exclusions caused too few, backfill from all bins by descending score
-            if len(fill) < (K - Ks):
-                # make a global ranking of bins by score
-                order = torch.argsort(score, descending=True)
-                for i in order.tolist():
-                    if i in static_set:
-                        continue
-                    if i in fill:
-                        continue
-                    fill.append(i)
-                    if len(fill) >= (K - Ks):
-                        break
-
-            idx = torch.cat([static_idx, torch.as_tensor(fill, device=static_idx.device, dtype=static_idx.dtype)], dim=0)
-            # gather order does not matter for "packed" output, but keep deterministic:
-            # place static first, then fill (as selected).
-            return idx, int(idx.numel()), score
-
-        else:
-            # per-head: top_idx is (H,K), static_idx shared
-            # For each head: keep static then fill with head-specific top-k
-            H = top_idx.size(0)
-            out = []
-            static_list = static_idx.tolist()
-
-            # score: (H,F)
-            assert score is not None and score.dim() == 2 and score.size(0) == H
-
-            for h in range(H):
-                if Ks >= K:
-                    out.append(static_idx[:K])
-                    continue
-
-                static_set = set(static_list)
-                fill = []
-                cand = top_idx[h].tolist()
-                for i in cand:
-                    if i not in static_set:
-                        fill.append(i)
-                    if len(fill) >= (K - Ks):
-                        break
-
-                if len(fill) < (K - Ks):
-                    order = torch.argsort(score[h], descending=True)
-                    for i in order.tolist():
-                        if i in static_set:
-                            continue
-                        if i in fill:
-                            continue
-                        fill.append(i)
-                        if len(fill) >= (K - Ks):
-                            break
-
-                idx_h = torch.cat(
-                    [
-                        static_idx,
-                        torch.as_tensor(fill, device=static_idx.device, dtype=static_idx.dtype),
-                    ],
-                    dim=0,
-                )
-                out.append(idx_h)
-
-            idx = torch.stack(out, dim=0)  # (H,K') where K' should equal K (but be safe)
-            # Ensure exactly K columns
-            idx = idx[:, :K].contiguous()
-            return idx, K, score
-
-    def _gather_selected(self, x_ft: torch.Tensor, idx: torch.Tensor, K: int) -> torch.Tensor:
-        """
-        x_ft: (B,F,H,Ein)
-        idx: (K,) or (H,K)
-        Returns x_sel: (B,K,H,Ein)
-        """
-        B, F, H, Ein = x_ft.shape
-
-        if idx.dim() == 1:
-            # shared across heads
-            return x_ft.index_select(dim=1, index=idx[:K])
-
-        # per-head gather: idx (H,K)
-        # We need indices shaped (B,K,H,Ein) to gather along dim=1
-        idx_g = idx.transpose(0, 1).unsqueeze(0).unsqueeze(-1)  # (1,K,H,1)
-        idx_g = idx_g.expand(B, -1, -1, Ein)                    # (B,K,H,Ein)
-        return x_ft.gather(dim=1, index=idx_g)
-
-    # ---------------- forward ----------------
+        static_idx = self._static_idx_valid(F)
+        idx = self._select_idx_shared(static_idx, top_idx, score, K=K)
+        return idx, int(idx.numel())
 
     def forward(self, q, k, v, mask):
-        # q: (B, L, H, Ein) -> y: (B, L, H, Eout)
         B, L, H, Ein = q.shape
         assert H == self.num_heads and Ein == self.Ein
 
         x_in = q
         x = q.to(torch.float32)
 
-        # FFT over time dim=1 => (B, F, H, Ein)
-        x_ft = torch.fft.rfft(x, dim=1, norm=self.fft_norm)
+        x_ft = torch.fft.rfft(x, dim=1, norm=self.fft_norm)  # (B,F,H,Ein)
         F = x_ft.size(1)
         assert F == L // 2 + 1
 
-        # Select indices (static / topk / hybrid)
-        idx, K, _score = self._select_indices(x_ft)  # idx: (K,) or (H,K)
+        idx, K = self._select_indices(x_ft)
 
-        # Gather selected bins: (B, K, H, Ein)
-        x_sel = self._gather_selected(x_ft, idx, K)
+        # gather selected: (B,K,H,Ein)
+        if idx.dim() == 1:
+            x_sel = x_ft.index_select(dim=1, index=idx[:K])
+        else:
+            # Only possible if topk_per_head True for topk_* policies (not hybrid)
+            idx_g = idx.transpose(0, 1).unsqueeze(0).unsqueeze(-1)  # (1,K,H,1)
+            idx_g = idx_g.expand(B, -1, -1, Ein)                    # (B,K,H,Ein)
+            x_sel = x_ft.gather(dim=1, index=idx_g)
 
-        # Optional frequency-index normalization (based on true idx)
         if self.freq_norm_mode is not None:
             if idx.dim() == 1:
                 fs = self._freq_scale(idx[:K], dtype=x_sel.real.dtype)  # (K,)
                 x_sel = x_sel * fs.view(1, K, 1, 1)
             else:
-                # per-head: idx is (H,K); scale per element
-                # fs_hk: (H,K)
                 fs_hk = self._freq_scale(idx[:, :K].reshape(-1), dtype=x_sel.real.dtype).view(H, K)
-                # broadcast to (1,K,H,1) with transpose
                 x_sel = x_sel * fs_hk.transpose(0, 1).view(1, K, H, 1)
 
-        # Output spectrum: (B, F, H, Eout)
         out_ft = x_ft.new_zeros((B, F, H, self.Eout))
 
         if not self.lrfop:
-            # Full operator uses the first K learned slots (packed convention).
-            # W is stored for len(self.index) (static K); for topk/hybrid we still use first K slots.
+            # IMPORTANT FIX #1: weights has max_slots >= K
             W = self.weights[:K]  # (K,H,Ein,Eout)
             out_sel = torch.einsum("bkhi,khio->bkho", x_sel, W)
         else:
-            # Low-rank operator: shared across frequencies, packed convention
             U = self.U0.unsqueeze(0).expand(K, -1, -1, -1)  # (K,H,Ein,r)
             V = self.V0.unsqueeze(0).expand(K, -1, -1, -1)  # (K,H,Eout,r)
             out_sel = torch.einsum("bkhi,khir,khor->bkho", x_sel, U, V)
 
-        # PACK into first K frequency bins (intentional)
         out_ft[:, :K] = out_sel
 
-        # Back to time: (B, L, H, Eout)
         y = torch.fft.irfft(
             out_ft.permute(0, 2, 3, 1), n=L, dim=-1, norm=self.fft_norm
         ).permute(0, 3, 1, 2).to(x_in.dtype)
