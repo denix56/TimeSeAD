@@ -36,6 +36,7 @@ class FEDformer(BaseModel):
             topk: int = 0,
             freq_norm_mode: str | None = None,  # None -> no normalization
             lrfop: bool = False,
+            shared_attention: bool = False,
         ) -> None:
         """
         version: str, for FEDformer, there are two versions to choose, options: [Fourier, Wavelets].
@@ -69,6 +70,9 @@ class FEDformer(BaseModel):
                                             mode_policy=mode_policy,
                                             topk=topk,
             )
+        if shared_attention:
+            encoder_self_att_inst = encoder_self_att()
+            encoder_self_att = lambda: encoder_self_att_inst
         # Encoder
         self.encoder = Encoder(
             [
