@@ -32,7 +32,7 @@ class FEDformer(BaseModel):
             modes: int=32,
             fft_norm: str = "backward",
             w_init: str = "random",
-            mode_policy: str = "static",  # {"static","topk_batch","topk_running","hybrid_batch","hybrid_running"}
+            mode_policy: str = "static",
             topk: int = 0,
             freq_norm_mode: str | None = None,  # None -> no normalization
             lrfop: bool = False,
