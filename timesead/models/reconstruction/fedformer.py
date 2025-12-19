@@ -32,6 +32,8 @@ class FEDformer(BaseModel):
             modes: int=32,
             fft_norm: str = "backward",
             w_init: str = "random",
+            mode_policy: str = "static",  # {"static","topk_batch","topk_running","hybrid_batch","hybrid_running"}
+            topk: int = 0,
             freq_norm_mode: str | None = None,  # None -> no normalization
             lrfop: bool = False,
         ) -> None:
@@ -64,7 +66,9 @@ class FEDformer(BaseModel):
                                             w_init=w_init,
                                             freq_norm_mode=freq_norm_mode,
                                             lrfop=lrfop,
-                                            )
+                                            mode_policy=mode_policy,
+                                            topk=topk,
+            )
         # Encoder
         self.encoder = Encoder(
             [
