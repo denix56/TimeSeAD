@@ -54,9 +54,9 @@ class FEDformer(BaseModel):
         self.enc_embedding = DataEmbedding(input_dim, model_dim, dropout)
 
         if self.version == 'Wavelets':
-            encoder_self_att = MultiWaveletTransform(ich=model_dim, L=1, base='legendre')
+            encoder_self_att = lambda: MultiWaveletTransform(ich=model_dim, L=1, base='legendre')
         else:
-            encoder_self_att = FourierBlock(in_channels=model_dim,
+            encoder_self_att = lambda: FourierBlock(in_channels=model_dim,
                                             out_channels=model_dim,
                                             seq_len=self.seq_len,
                                             num_heads=num_heads,
@@ -74,7 +74,7 @@ class FEDformer(BaseModel):
             [
                 EncoderLayer(
                     AutoCorrelationLayer(
-                        encoder_self_att,  # instead of multi-head attention in transformer
+                        encoder_self_att(),  # instead of multi-head attention in transformer
                         model_dim, num_heads),
                     model_dim,
                     fcn_dim,
