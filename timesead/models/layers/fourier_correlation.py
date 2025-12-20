@@ -76,7 +76,7 @@ class FourierBlock(nn.Module):
         self.lrfop = bool(lrfop)
 
         self.mode_policy = str(mode_policy)
-        self.topk = int(topk)
+        self.topk = int(topk) if self.mode_policy != "static" else 0
         self.topk_exclude_dc = bool(topk_exclude_dc)
         self.topk_exclude_nyquist = bool(topk_exclude_nyquist)
         self.topk_per_head = bool(topk_per_head)
