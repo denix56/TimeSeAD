@@ -301,7 +301,8 @@ class FourierBlock(nn.Module):
 
         if not self.lrfop:
             # IMPORTANT FIX #1: weights has max_slots >= K
-            W = self.weights  # (K,H,Ein,Eout)
+            W = self.weights[:K]  # (K,H,Ein,Eout)
+            assert W.shape[0] == x_sel.shape[1], f"{W.shape[0]} != {x_sel.shape[1]}"
             out_sel = torch.einsum("bkhi,khio->bkho", x_sel, W)
         else:
             U = self.U0.unsqueeze(0).expand(K, -1, -1, -1)  # (K,H,Ein,r)
