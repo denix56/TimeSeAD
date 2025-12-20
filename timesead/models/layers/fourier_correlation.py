@@ -267,7 +267,9 @@ class FourierBlock(nn.Module):
 
     def forward(self, q, k, v, mask):
         B, L, H, Ein = q.shape
-        assert H == self.num_heads and Ein == self.Ein
+        assert H == self.num_heads
+        assert Ein == self.Ein
+        assert L == self.seq_len
 
         x_in = q
         x = q.to(torch.float32)
@@ -280,7 +282,7 @@ class FourierBlock(nn.Module):
 
         # gather selected: (B,K,H,Ein)
         if idx.dim() == 1:
-            x_sel = x_ft.index_select(dim=1, index=idx[:K])
+            x_sel = x_ft.index_select(dim=1, index=idx)
         else:
             # Only possible if topk_per_head True for topk_* policies (not hybrid)
             idx_g = idx.transpose(0, 1).unsqueeze(0).unsqueeze(-1)  # (1,K,H,1)
@@ -289,24 +291,24 @@ class FourierBlock(nn.Module):
 
         if self.freq_norm_mode is not None:
             if idx.dim() == 1:
-                fs = self._freq_scale(idx[:K], dtype=x_sel.real.dtype)  # (K,)
+                fs = self._freq_scale(idx, dtype=x_sel.real.dtype)  # (K,)
                 x_sel = x_sel * fs.view(1, K, 1, 1)
             else:
                 fs_hk = self._freq_scale(idx[:, :K].reshape(-1), dtype=x_sel.real.dtype).view(H, K)
                 x_sel = x_sel * fs_hk.transpose(0, 1).view(1, K, H, 1)
 
-        out_ft = x_ft.new_zeros((B, F, H, self.Eout))
+        #out_ft = x_ft.new_zeros((B, F, H, self.Eout))
 
         if not self.lrfop:
             # IMPORTANT FIX #1: weights has max_slots >= K
-            W = self.weights[:K]  # (K,H,Ein,Eout)
+            W = self.weights  # (K,H,Ein,Eout)
             out_sel = torch.einsum("bkhi,khio->bkho", x_sel, W)
         else:
             U = self.U0.unsqueeze(0).expand(K, -1, -1, -1)  # (K,H,Ein,r)
             V = self.V0.unsqueeze(0).expand(K, -1, -1, -1)  # (K,H,Eout,r)
             out_sel = torch.einsum("bkhi,khir,khor->bkho", x_sel, U, V)
 
-        out_ft[:, :K] = out_sel
+        out_ft = out_sel
 
         y = torch.fft.irfft(
             out_ft.permute(0, 2, 3, 1), n=L, dim=-1, norm=self.fft_norm
