@@ -60,6 +60,7 @@ class FourierBlock(nn.Module):
         topk_exclude_nyquist: bool = False,
         topk_per_head: bool = False,  # supported, but hybrid is implemented most robustly with False
         topk_ema: float = 0.9,
+        scatter_freq: bool = False,
     ):
         super().__init__()
         assert in_channels % num_heads == 0
@@ -81,6 +82,7 @@ class FourierBlock(nn.Module):
         self.topk_exclude_nyquist = bool(topk_exclude_nyquist)
         self.topk_per_head = bool(topk_per_head)
         self.topk_ema = float(topk_ema)
+        self.scatter_freq = bool(scatter_freq)
 
         index = get_frequency_modes(self.seq_len, modes=modes, mode_select_method=mode_select_method)
         self.register_buffer("index", torch.as_tensor(index, dtype=torch.long))
@@ -297,7 +299,7 @@ class FourierBlock(nn.Module):
                 fs_hk = self._freq_scale(idx[:, :K].reshape(-1), dtype=x_sel.real.dtype).view(H, K)
                 x_sel = x_sel * fs_hk.transpose(0, 1).view(1, K, H, 1)
 
-        #out_ft = x_ft.new_zeros((B, F, H, self.Eout))
+        out_ft = x_ft.new_zeros((B, F, H, self.Eout))
 
         if not self.lrfop:
             # IMPORTANT FIX #1: weights has max_slots >= K
@@ -309,7 +311,14 @@ class FourierBlock(nn.Module):
             V = self.V0.unsqueeze(0).expand(K, -1, -1, -1)  # (K,H,Eout,r)
             out_sel = torch.einsum("bkhi,khir,khor->bkho", x_sel, U, V)
 
-        out_ft = out_sel
+        if self.scatter_freq:
+            if idx.dim() == 1:
+                out_ft.index_copy_(1, idx, out_sel)
+            else:
+                for h in range(H):
+                    out_ft[:, idx[h], h, :] = out_sel[:, :, h, :]
+        else:
+            out_ft[:, :K] = out_sel
 
         y = torch.fft.irfft(
             out_ft.permute(0, 2, 3, 1), n=L, dim=-1, norm=self.fft_norm
