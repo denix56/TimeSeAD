@@ -247,7 +247,7 @@ class FourierBlock(nn.Module):
         return idx[:K]
 
     def _select_indices(self, x_ft: torch.Tensor) -> tuple[torch.Tensor, int]:
-        B, F, H, Ein = x_ft.shape
+        B, F, H, Ein = x_ft.shape[:4]
 
         # Static or no-topk
         if self.mode_policy == "static" or self.topk <= 0:
