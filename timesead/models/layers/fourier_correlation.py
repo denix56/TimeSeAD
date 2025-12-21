@@ -90,6 +90,7 @@ class FourierBlock(nn.Module):
 
         self.mode_policy = str(mode_policy)
         self.topk = int(topk) if self.mode_policy != "static" else 0
+        self.topk = min(self.topk, self.freq_len)
         self.topk_exclude_dc = bool(topk_exclude_dc)
         self.topk_exclude_nyquist = bool(topk_exclude_nyquist)
         self.topk_per_head = bool(topk_per_head)
