@@ -41,8 +41,6 @@ class FourierBlock(nn.Module):
       - "static": use precomputed self.index (original behavior)
       - "topk_batch": Top-k by energy from current batch
       - "topk_running": Top-k by EMA running energy
-      - "hybrid_batch": union(static, topk_batch) with order = [static, topk_new], truncated/padded to K
-      - "hybrid_running": union(static, topk_running) with same rule
 
     Notes:
       - For best compile stability, keep topk_per_head=False (shared indices across heads).
@@ -63,11 +61,11 @@ class FourierBlock(nn.Module):
         lrfop: bool = False,
         rank: int = 8,
         # --- selection ---
-        mode_policy: str = "static",  # {"static","topk_batch","topk_running","hybrid_batch","hybrid_running"}
+        mode_policy: str = "static",  # {"static","topk_batch","topk_running"}
         topk: int = 0,
         topk_exclude_dc: bool = True,
         topk_exclude_nyquist: bool = False,
-        topk_per_head: bool = False,  # supported, but hybrid is implemented most robustly with False
+        topk_per_head: bool = False,
         topk_ema: float = 0.9,
         scatter_freq: bool = False,
     ):
@@ -207,45 +205,6 @@ class FourierBlock(nn.Module):
             return torch.topk(score, k=K, dim=-1, largest=True, sorted=True).indices  # (H,K)
         return torch.topk(score, k=K, dim=0, largest=True, sorted=True).indices      # (K,)
 
-    def _select_idx_shared(self, static_idx: torch.Tensor, top_idx: torch.Tensor, score: torch.Tensor, K: int) -> torch.Tensor:
-        """
-        Hybrid selection (shared across heads), compile-friendly, no Python loops.
-
-        Order: [static_idx, top_idx_not_in_static, backfill_by_score_not_in_union] then truncate to K.
-        """
-        device = static_idx.device
-        dtype = static_idx.dtype
-
-        static_idx = static_idx[:K]
-        n_static = static_idx.numel()
-
-        if n_static >= K:
-            return static_idx
-
-        # remove duplicates from top_idx wrt static
-        if n_static > 0:
-            mask_new = ~torch.isin(top_idx, static_idx)
-            top_new = top_idx[mask_new]
-        else:
-            top_new = top_idx
-
-        need = K - n_static
-        top_new = top_new[:need]
-
-        idx = torch.cat([static_idx, top_new], dim=0)
-
-        if idx.numel() >= K:
-            return idx[:K]
-
-        # backfill: take remaining highest-score bins not in idx
-        F = score.numel()
-        order = torch.argsort(score, descending=True)  # (F,)
-        mask_fill = ~torch.isin(order, idx)
-        fill = order[mask_fill][: (K - idx.numel())]
-
-        idx = torch.cat([idx, fill.to(device=device, dtype=dtype)], dim=0)
-        return idx[:K]
-
     def _select_indices(self, x_ft: torch.Tensor) -> tuple[torch.Tensor, int]:
         B, F, H, Ein = x_ft.shape[:4]
 
@@ -267,14 +226,7 @@ class FourierBlock(nn.Module):
         if self.mode_policy.startswith("topk_"):
             return top_idx, K
 
-        # Hybrid: for best compile stability, do shared selection.
-        # If you truly need per-head hybrid, I can provide it, but it is heavier.
-        if self.topk_per_head:
-            raise RuntimeError("hybrid_* with topk_per_head=True is intentionally disabled for compile stability.")
-
-        static_idx = self._static_idx_valid(F)
-        idx = self._select_idx_shared(static_idx, top_idx, score, K=K)
-        return idx, int(idx.numel())
+        raise ValueError(f"Unsupported mode_policy={self.mode_policy}")
 
     def forward(self, q, k, v, mask):
         B, L, H, Ein = q.shape
@@ -297,7 +249,7 @@ class FourierBlock(nn.Module):
         if idx.dim() == 1:
             x_sel = x_ft.index_select(dim=1, index=idx)
         else:
-            # Only possible if topk_per_head True for topk_* policies (not hybrid)
+            # Only possible if topk_per_head True for topk_* policies
             idx_g = idx.transpose(0, 1).unsqueeze(0).unsqueeze(-1)  # (1,K,H,1)
             idx_g = idx_g.expand(B, -1, -1, Ein)                    # (B,K,H,Ein)
             if use_real:
