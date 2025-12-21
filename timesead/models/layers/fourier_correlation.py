@@ -78,6 +78,11 @@ class FourierBlock(nn.Module):
         self.Ein = in_channels // num_heads
         self.Eout = out_channels // num_heads
 
+        # Expected frequency length for rfft on a sequence of seq_len
+        # This is static for a given module instance and lets us avoid
+        # data-dependent shape reasoning inside torch.compile.
+        self.freq_len = (self.seq_len // 2) + 1
+
         self.fft_norm = None if fft_norm in (None, "backward") else fft_norm
         self.w_init = str(w_init)
         self.freq_norm_mode = freq_norm_mode
@@ -92,7 +97,17 @@ class FourierBlock(nn.Module):
         self.scatter_freq = bool(scatter_freq)
 
         index = get_frequency_modes(self.seq_len, modes=modes, mode_select_method=mode_select_method)
-        self.register_buffer("index", torch.as_tensor(index, dtype=torch.long))
+        static_idx = torch.as_tensor(index, dtype=torch.long)
+        if static_idx.numel() == 0:
+            raise ValueError("FourierBlock requires at least one static frequency mode")
+        if int(static_idx.max()) >= self.freq_len:
+            raise ValueError(
+                "Precomputed frequency indices exceed available spectrum for the configured seq_len"
+            )
+        self.register_buffer("index", static_idx)
+
+        if self.topk > 0 and self.topk > self.freq_len:
+            raise ValueError("topk must not exceed the available frequency bins for seq_len")
 
         self.scale = 1.0 / (in_channels * out_channels)
 
@@ -157,10 +172,10 @@ class FourierBlock(nn.Module):
             return 1.0 / x
         raise ValueError(f"Unsupported freq_norm_mode={self.freq_norm_mode}")
 
-    def _static_idx_valid(self, F: int) -> torch.Tensor:
-        if self.index.numel() == 0:
-            return self.index
-        return self.index[self.index < F]
+    def _static_idx_valid(self) -> torch.Tensor:
+        # index is validated against freq_len at construction time, so we can
+        # return it directly without data-dependent checks.
+        return self.index
 
     def _score_bins(self, x_ft: torch.Tensor) -> torch.Tensor:
         """
@@ -168,6 +183,10 @@ class FourierBlock(nn.Module):
         returns score: (F,) if topk_per_head=False else (H,F)
         """
         B, F, H, Ein = x_ft.shape[:4]
+
+        # Ensure the runtime frequency length matches the static expectation to
+        # keep torch.compile from inserting data-dependent guards.
+        assert F == self.freq_len, f"Unexpected frequency length {F}, expected {self.freq_len}"
         e = complex_energy(x_ft).sum(dim=-1)  # (B,F,H)
 
         if self.topk_per_head:
@@ -210,15 +229,13 @@ class FourierBlock(nn.Module):
 
         # Static or no-topk
         if self.mode_policy == "static" or self.topk <= 0:
-            idx = self._static_idx_valid(F)
-            K = int(idx.numel())
-            if K <= 0:
-                raise RuntimeError("No valid static modes selected (K=0).")
+            idx = self._static_idx_valid()
+            K = idx.shape[0]
+            assert K > 0, "No valid static modes selected (K=0)."
             return idx, K
 
-        K = min(self.topk, F)
-        if K <= 0:
-            raise RuntimeError("topk must be > 0 for dynamic policies")
+        K = self.topk
+        assert K > 0, "topk must be > 0 for dynamic policies"
 
         score = self._score_bins(x_ft)
         top_idx = self._topk_idx(score, K=K)
