@@ -8,6 +8,15 @@ import torch.nn as nn
 torch._dynamo.config.capture_scalar_outputs = True
 torch._dynamo.config.capture_dynamic_output_shape_ops = True
 
+from ...utils.complex_ops import (
+    as_complex,
+    as_real,
+    complex_einsum_bkhi_khio,
+    complex_einsum_lowrank,
+    complex_energy,
+    is_compile_mode,
+)
+
 
 def get_frequency_modes(seq_len, modes=64, mode_select_method="random"):
     modes = min(int(modes), seq_len // 2)
@@ -157,11 +166,11 @@ class FourierBlock(nn.Module):
 
     def _score_bins(self, x_ft: torch.Tensor) -> torch.Tensor:
         """
-        x_ft: (B,F,H,Ein) complex
+        x_ft: (B,F,H,Ein[,2]) complex or real representation
         returns score: (F,) if topk_per_head=False else (H,F)
         """
-        B, F, H, Ein = x_ft.shape
-        e = (x_ft.real.float().square() + x_ft.imag.float().square()).sum(dim=-1)  # (B,F,H)
+        B, F, H, Ein = x_ft.shape[:4]
+        e = complex_energy(x_ft).sum(dim=-1)  # (B,F,H)
 
         if self.topk_per_head:
             score = e.mean(dim=0).transpose(0, 1).contiguous()  # (H,F)
@@ -276,8 +285,10 @@ class FourierBlock(nn.Module):
         x_in = q
         x = q.to(torch.float32)
 
-        x_ft = torch.fft.rfft(x, dim=1, norm=self.fft_norm)  # (B,F,H,Ein)
-        F = x_ft.size(1)
+        x_ft_c = torch.fft.rfft(x, dim=1, norm=self.fft_norm)  # (B,F,H,Ein)
+        use_real = is_compile_mode()
+        x_ft = as_real(x_ft_c) if use_real else x_ft_c
+        F = x_ft.shape[1]
         assert F == L // 2 + 1
 
         idx, K = self._select_indices(x_ft)
@@ -289,6 +300,8 @@ class FourierBlock(nn.Module):
             # Only possible if topk_per_head True for topk_* policies (not hybrid)
             idx_g = idx.transpose(0, 1).unsqueeze(0).unsqueeze(-1)  # (1,K,H,1)
             idx_g = idx_g.expand(B, -1, -1, Ein)                    # (B,K,H,Ein)
+            if use_real:
+                idx_g = idx_g.unsqueeze(-1).expand(-1, -1, -1, -1, 2)  # (B,K,H,Ein,2)
             x_sel = x_ft.gather(dim=1, index=idx_g)
 
         if self.freq_norm_mode is not None:
@@ -299,17 +312,23 @@ class FourierBlock(nn.Module):
                 fs_hk = self._freq_scale(idx[:, :K].reshape(-1), dtype=x_sel.real.dtype).view(H, K)
                 x_sel = x_sel * fs_hk.transpose(0, 1).view(1, K, H, 1)
 
-        out_ft = x_ft.new_zeros((B, F, H, self.Eout))
+        out_ft = x_ft.new_zeros((B, F, H, self.Eout, 2)) if use_real else x_ft.new_zeros((B, F, H, self.Eout))
 
         if not self.lrfop:
             # IMPORTANT FIX #1: weights has max_slots >= K
             W = self.weights[:K] # (K,H,Ein,Eout)
             assert W.shape[0] == x_sel.shape[1], f"{W.shape[0]} != {x_sel.shape[1]}, {self.index.shape[0]}, {K}, {x_ft.shape}"
-            out_sel = torch.einsum("bkhi,khio->bkho", x_sel, W)
+            if use_real:
+                out_sel = complex_einsum_bkhi_khio(x_sel, as_real(W))
+            else:
+                out_sel = torch.einsum("bkhi,khio->bkho", x_sel, W)
         else:
             U = self.U0.unsqueeze(0).expand(K, -1, -1, -1)  # (K,H,Ein,r)
             V = self.V0.unsqueeze(0).expand(K, -1, -1, -1)  # (K,H,Eout,r)
-            out_sel = torch.einsum("bkhi,khir,khor->bkho", x_sel, U, V)
+            if use_real:
+                out_sel = complex_einsum_lowrank(x_sel, as_real(U), as_real(V))
+            else:
+                out_sel = torch.einsum("bkhi,khir,khor->bkho", x_sel, U, V)
 
         if self.scatter_freq:
             if idx.dim() == 1:
@@ -320,8 +339,12 @@ class FourierBlock(nn.Module):
         else:
             out_ft[:, :K] = out_sel
 
+        if use_real:
+            y_ft = as_complex(out_ft.permute(0, 2, 3, 1, 4))
+        else:
+            y_ft = out_ft.permute(0, 2, 3, 1)
         y = torch.fft.irfft(
-            out_ft.permute(0, 2, 3, 1), n=L, dim=-1, norm=self.fft_norm
+            y_ft, n=L, dim=-1, norm=self.fft_norm
         ).permute(0, 3, 1, 2).to(x_in.dtype)
 
         return (y, None)

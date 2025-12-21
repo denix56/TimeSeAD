@@ -7,6 +7,7 @@ import torch.fft
 import torch.nn.functional as F
 
 from ...models import BaseModel
+from ...utils.complex_ops import as_real, complex_abs, is_compile_mode
 from ..layers.embed import DataEmbedding
 from ..layers.inception import InceptionBlockV1
 
@@ -14,7 +15,10 @@ from ..layers.inception import InceptionBlockV1
 def FFT_for_Period(x: torch.Tensor, k: int = 2) -> Tuple[torch.Tensor, torch.Tensor]:
     # [B, C, T]
     xf = torch.fft.rfft(x, dim=-1)
-    amplitudes = torch.abs(xf)
+    if is_compile_mode():
+        amplitudes = complex_abs(as_real(xf))
+    else:
+        amplitudes = torch.abs(xf)
     frequency_amplitudes = amplitudes.mean(dim=(0, 1))
     # zero out the zero-frequency component
     frequency_amplitudes[0] = 0
