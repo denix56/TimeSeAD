@@ -48,7 +48,19 @@ class InceptionBlockV1(nn.Module):
             pad = i
             x_padded = x
             if pad > 0:
-                padding = (pad, pad, pad, pad)
+                # Torch circular padding does not allow wrapping more than once.
+                # When the temporal dimension ("width") becomes very small (e.g. period=1),
+                # the requested padding may exceed the dimension size and trigger a runtime
+                # error. Clamp the padding so we never wrap more than the available length.
+                max_pad = min(
+                    pad,
+                    max(x_padded.size(-1) - 1, 0),
+                    max(x_padded.size(-2) - 1, 0),
+                )
+                if max_pad == 0:
+                    res_list.append(self.kernels[i](x_padded))
+                    continue
+                padding = (max_pad, max_pad, max_pad, max_pad)
                 if self.circular_padding:
                     x_padded = F.pad(x_padded, padding, mode="circular")
                 else:
