@@ -1,17 +1,36 @@
 # Implementation from Time Series Library https://github.com/thuml/Time-Series-Library
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn.utils import spectral_norm
 
 
 class InceptionBlockV1(nn.Module):
-    def __init__(self, in_channels, out_channels, num_kernels=6, init_weight=True):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        num_kernels=6,
+        init_weight=True,
+        circular_padding: bool = False,
+        use_spectral_norm: bool = False,
+    ):
         super(InceptionBlockV1, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.num_kernels = num_kernels
+        self.circular_padding = circular_padding
+        self.use_spectral_norm = use_spectral_norm
         kernels = []
         for i in range(self.num_kernels):
-            kernels.append(nn.Conv2d(in_channels, out_channels, kernel_size=2 * i + 1, padding=i))
+            conv = nn.Conv2d(
+                in_channels,
+                out_channels,
+                kernel_size=2 * i + 1,
+                padding=0,
+                bias=True,
+            )
+            kernels.append(spectral_norm(conv) if self.use_spectral_norm else conv)
         self.kernels = nn.ModuleList(kernels)
         if init_weight:
             self._initialize_weights()
@@ -26,6 +45,12 @@ class InceptionBlockV1(nn.Module):
     def forward(self, x):
         res_list = []
         for i in range(self.num_kernels):
-            res_list.append(self.kernels[i](x))
+            pad = i
+            x_padded = x
+            if pad > 0:
+                if self.circular_padding:
+                    x_padded = F.pad(x_padded, (pad, pad, 0, 0), mode="circular")
+                x_padded = F.pad(x_padded, (0, 0, pad, pad))
+            res_list.append(self.kernels[i](x_padded))
         res = sum(res_list)
         return res

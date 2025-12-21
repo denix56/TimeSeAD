@@ -70,10 +70,10 @@ def training_config():
 def config():
     # Model-specific parameters
     model_params = dict(
-        top_k=5,
+        max_k=5,
         d_model=64,
         d_ff=64,
-        num_kernel=8,
+        num_kernels=8,
         e_layers=2,
         dropout=0.1,
     )
@@ -121,10 +121,10 @@ def main(model_params, dataset, training, _run, train_detector=True):
     model = TimesNet(
         train_ds.seq_len,
         train_ds.num_features,
-        model_params.top_k,
+        model_params.max_k,
         model_params.d_model,
         model_params.d_ff,
-        model_params.num_kernel,
+        model_params.num_kernels,
         model_params.e_layers,
         model_params.dropout
     )
