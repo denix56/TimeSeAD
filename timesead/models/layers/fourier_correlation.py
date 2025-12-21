@@ -305,12 +305,13 @@ class FourierBlock(nn.Module):
             x_sel = x_ft.gather(dim=1, index=idx_g)
 
         if self.freq_norm_mode is not None:
+            scale = (lambda t: t.view(1, K, 1, 1, 1)) if use_real else (lambda t: t.view(1, K, 1, 1))
             if idx.dim() == 1:
                 fs = self._freq_scale(idx, dtype=x_sel.real.dtype)  # (K,)
-                x_sel = x_sel * fs.view(1, K, 1, 1)
+                x_sel = x_sel * scale(fs)
             else:
                 fs_hk = self._freq_scale(idx[:, :K].reshape(-1), dtype=x_sel.real.dtype).view(H, K)
-                x_sel = x_sel * fs_hk.transpose(0, 1).view(1, K, H, 1)
+                x_sel = x_sel * scale(fs_hk.transpose(0, 1))
 
         out_ft = x_ft.new_zeros((B, F, H, self.Eout, 2)) if use_real else x_ft.new_zeros((B, F, H, self.Eout))
 
