@@ -35,7 +35,7 @@ class TorchCompileTest(TestCase):
             lambda: TimesNet(
                 window_size=8,
                 input_dim=2,
-                top_k=2,
+                max_k=2,
                 d_model=8,
                 d_ff=8,
                 num_kernels=2,
