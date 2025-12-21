@@ -48,9 +48,11 @@ class InceptionBlockV1(nn.Module):
             pad = i
             x_padded = x
             if pad > 0:
+                padding = (pad, pad, pad, pad)
                 if self.circular_padding:
-                    x_padded = F.pad(x_padded, (pad, pad, 0, 0), mode="circular")
-                x_padded = F.pad(x_padded, (0, 0, pad, pad))
+                    x_padded = F.pad(x_padded, padding, mode="circular")
+                else:
+                    x_padded = F.pad(x_padded, padding)
             res_list.append(self.kernels[i](x_padded))
         res = sum(res_list)
         return res
