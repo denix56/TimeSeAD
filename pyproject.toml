@@ -8,7 +8,7 @@ version = "0.0.2"
 description = "TimeSeAD - Library for Benchmarking Multivariate Time Series Anomaly Detection"
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 
 authors = [
   { name = "Dennis Wagner", email = "dwagner@cs.uni-kl.de" },
