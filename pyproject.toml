@@ -56,3 +56,7 @@ docs = [
 [project.urls]
 Homepage = "https://github.com/denix56/TimeSeAD"
 
+[tool.uv.build-backend]
+module-name = ["timesead", "timesead_experiments"]
+module-root = ""
+
