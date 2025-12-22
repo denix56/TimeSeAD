@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv-build>=0.7"]
+build-backend = "uv_build"
 
 [project]
 name = "TimeSeAD"
@@ -56,8 +56,3 @@ docs = [
 [project.urls]
 Homepage = "https://github.com/denix56/TimeSeAD"
 
-[tool.hatch.build.targets.wheel]
-packages = ["timesead", "timesead_experiments"]
-
-[tool.hatch.metadata]
-allow-direct-references = true
