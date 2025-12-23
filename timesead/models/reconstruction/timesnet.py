@@ -131,7 +131,6 @@ class TimesBlock(nn.Module):
             num_tapers: int = 3,
             time_bandwidth: float = 2.5,
             eigenvalue_threshold: float = 0.85,
-            circular_padding: bool = False,
             use_spectral_norm: bool = False,
             use_multitaper: bool = False,
         ) -> None:
@@ -146,11 +145,19 @@ class TimesBlock(nn.Module):
         self.use_multitaper = use_multitaper
         # parameter-efficient design
         self.conv = nn.Sequential(
-            InceptionBlockV1(d_model, d_ff, num_kernels=num_kernels, circular_padding=circular_padding,
-                             use_spectral_norm=use_spectral_norm),
+            InceptionBlockV1(
+                d_model,
+                d_ff,
+                num_kernels=num_kernels,
+                use_spectral_norm=use_spectral_norm,
+            ),
             nn.GELU(),
-            InceptionBlockV1(d_ff, d_model, num_kernels=num_kernels, circular_padding=circular_padding,
-                             use_spectral_norm=use_spectral_norm)
+            InceptionBlockV1(
+                d_ff,
+                d_model,
+                num_kernels=num_kernels,
+                use_spectral_norm=use_spectral_norm,
+            ),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -206,7 +213,6 @@ class TimesNet(BaseModel):
         num_tapers: int = 3,
         time_bandwidth: float = 2.5,
         eigenvalue_threshold: float = 0.85,
-        circular_padding: bool = False,
         use_spectral_norm: bool = False,
         use_multitaper: bool = False,
     ) -> None:
@@ -225,7 +231,6 @@ class TimesNet(BaseModel):
                     num_tapers=num_tapers,
                     time_bandwidth=time_bandwidth,
                     eigenvalue_threshold=eigenvalue_threshold,
-                    circular_padding=circular_padding,
                     use_spectral_norm=use_spectral_norm,
                     use_multitaper=use_multitaper,
                 ),
