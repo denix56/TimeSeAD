@@ -18,6 +18,7 @@ class EIFAD(AnomalyDetector):
         feature_combinations: Optional[int] = 2,
         n_jobs: Optional[int] = None,
         input_shape: str = "btf",
+        parallel_predict: bool = False,
         verbose: int = 0,
     ) -> None:
         """"
@@ -68,6 +69,7 @@ class EIFAD(AnomalyDetector):
         self.bootstrap = bootstrap
         self.feature_combinations = feature_combinations
         self.n_jobs = n_jobs
+        self.parallel_predict = parallel_predict
         self.verbose = verbose
         self.input_shape = input_shape
         self.model = ExtendedIsolationForest(
@@ -111,7 +113,12 @@ class EIFAD(AnomalyDetector):
 
         # Convert to numpy
         data = data.cpu().detach().numpy().astype(np.float32)
-        scores = -torch.tensor(self.model.score_samples(data))
+        if self.parallel_predict:
+            with parallel_backend("threading", n_jobs=self.n_jobs):
+                scores = self.model.score_samples(data)
+        else:
+            scores = self.model.score_samples(data)
+        scores = -torch.from_numpy(scores).to(batch_input.device)
 
         return scores
 
