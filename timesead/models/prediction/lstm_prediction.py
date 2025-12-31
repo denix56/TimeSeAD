@@ -142,7 +142,7 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
         self.register_buffer('mean', mean)
         self.register_buffer('precision', precision)
 
-    def _accumulate_errors(self, x: torch.Tensor, target: torch.Tensor):
+    def _accumulate_errors(self, x: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         with torch.inference_mode():
             pred = self.model((x,))
 
@@ -155,10 +155,11 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
             diag = torch.diagonal(flipped, offset=offset - (error.shape[0] - 1), dim1=0, dim2=1)
             self._errors[index].extend(diag)
         self._counter += error.shape[1]
+        return error
 
-    def forward(self, inputs: Tuple[torch.Tensor, ...]):
+    def forward(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         x, target = inputs
-        self._accumulate_errors(x, target)
+        return self._accumulate_errors(x, target)
 
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         raise NotImplementedError
@@ -249,7 +250,13 @@ class LSTMS2SPredictionAnomalyDetector(PredictionAnomalyDetector):
         )
 
         sq_error = sq_error.view(B, T).T
+        self._errors.append(sq_error)
         return sq_error
+
+    def compute(self) -> torch.Tensor:
+        scores = torch.cat(self._errors, dim=1).transpose(0, 1).flatten()
+        self.reset_state()
+        return scores
 
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, torch.Tensor, float, float]) \
             -> Tuple[torch.Tensor, float, float]:

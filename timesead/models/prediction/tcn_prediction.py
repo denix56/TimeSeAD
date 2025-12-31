@@ -179,7 +179,7 @@ class TCNS2SPredictionAnomalyDetector(PredictionAnomalyDetector):
         self.register_buffer('mean', mean)
         self.register_buffer('precision', precision)
 
-    def _accumulate_errors(self, x: torch.Tensor, target: torch.Tensor):
+    def _accumulate_errors(self, x: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         with torch.inference_mode():
             pred = self.model((x,))
 
@@ -192,10 +192,11 @@ class TCNS2SPredictionAnomalyDetector(PredictionAnomalyDetector):
             diag = torch.diagonal(flipped, offset=offset - (error.shape[0] - 1), dim1=0, dim2=1)
             self._errors[index].extend(diag)
         self._counter += error.shape[0]
+        return error
 
-    def forward(self, inputs: Tuple[torch.Tensor, ...]):
+    def forward(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         x, target = inputs
-        self._accumulate_errors(x, target)
+        return self._accumulate_errors(x, target)
 
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         raise NotImplementedError
@@ -259,7 +260,7 @@ class TCNPredictionAnomalyDetector(PredictionAnomalyDetector):
     def fit(self, dataset: torch.utils.data.DataLoader) -> None:
         pass
 
-    def _accumulate_errors(self, x: torch.Tensor, target: torch.Tensor):
+    def t(self, x: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         with torch.inference_mode():
             pred = self.model((x,))
 
@@ -272,10 +273,11 @@ class TCNPredictionAnomalyDetector(PredictionAnomalyDetector):
             diag = torch.diagonal(flipped, offset=offset - (error.shape[0] - 1), dim1=0, dim2=1)
             self._errors[index].extend(diag)
         self._counter += error.shape[0]
+        return error
 
-    def forward(self, inputs: Tuple[torch.Tensor, ...]):
+    def forward(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         x, target = inputs
-        self._accumulate_errors(x, target)
+        return self._accumulate_errors(x, target)
 
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         raise NotImplementedError
