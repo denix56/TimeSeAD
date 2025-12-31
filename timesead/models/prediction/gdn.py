@@ -343,7 +343,7 @@ class GDNAnomalyDetector(PredictionAnomalyDetector):
         # x: (B, T, D), x_target (B, 1, D)
         x, x_target = inputs
 
-        with torch.no_grad():
+        with torch.inference_mode():
             x_pred = self.model((x,))
 
         error = x_pred
@@ -351,10 +351,11 @@ class GDNAnomalyDetector(PredictionAnomalyDetector):
         torch.abs(error, out=error)
         error -= self.median
         error *= self.inv_iqr
-
         score, _ = torch.max(error, dim=-1)
-        score = score.squeeze(-1)
-        return score
+        return score.squeeze(-1)
+
+    def forward(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
+        return self.compute_online_anomaly_score(inputs)
 
     def compute_offline_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         pass
@@ -365,7 +366,7 @@ class GDNAnomalyDetector(PredictionAnomalyDetector):
         for i, (b_inputs, b_targets) in enumerate(dataset):
             b_inputs = tuple(b_inp.to(self.dummy.device) for b_inp in b_inputs)
             b_targets = tuple(b_tar.to(self.dummy.device) for b_tar in b_targets)
-            with torch.no_grad():
+            with torch.inference_mode():
                 pred = self.model(b_inputs)
 
             target, = b_targets

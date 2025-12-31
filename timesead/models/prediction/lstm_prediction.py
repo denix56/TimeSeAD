@@ -83,6 +83,12 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
         super(LSTMPredictionAnomalyDetector, self).__init__()
 
         self.model = model
+        self._errors = []
+        self._counter = 0
+
+    def reset_state(self) -> None:
+        self._errors = []
+        self._counter = 0
 
     def fit(self, dataset: torch.utils.data.DataLoader) -> None:
         errors = []
@@ -93,18 +99,18 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
         for b_inputs, b_targets in dataset:
             b_inputs = tuple(b_inp.to(device) for b_inp in b_inputs)
             b_targets = tuple(b_tar.to(device) for b_tar in b_targets)
-            with torch.no_grad():
+            with torch.inference_mode():
                 pred = self.model(b_inputs)
 
             target, = b_targets
 
             error = target - pred
-            for j in range(error.shape[0]):
-                for j2 in range(error.shape[1]):
-                    index = counter + j + j2
-                    if len(errors) < index + 1:
-                        errors.append([])
-                    errors[counter + j + j2].append(error[j, j2])
+            for offset in range(error.shape[0] + error.shape[1] - 1):
+                index = counter + offset
+                if len(errors) <= index:
+                    errors.extend([[] for _ in range(index + 1 - len(errors))])
+                diag = torch.diagonal(error, offset=offset - (error.shape[0] - 1), dim1=0, dim2=1)
+                errors[index].extend(diag)
             counter += error.shape[1]
 
         errors = errors[self.model.prediction_horizon - 1:-self.model.prediction_horizon + 1]
@@ -135,47 +141,62 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
         self.register_buffer('mean', mean)
         self.register_buffer('precision', precision)
 
+    def _accumulate_errors(self, x: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        with torch.inference_mode():
+            pred = self.model((x,))
+
+        error = target - pred
+        for offset in range(error.shape[0] + error.shape[1] - 1):
+            index = self._counter + offset
+            if len(self._errors) <= index:
+                self._errors.extend([[] for _ in range(index + 1 - len(self._errors))])
+            diag = torch.diagonal(error, offset=offset - (error.shape[0] - 1), dim1=0, dim2=1)
+            self._errors[index].extend(diag)
+        self._counter += error.shape[1]
+        return error
+
+    def forward(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
+        x, target = inputs
+        return self._accumulate_errors(x, target)
+
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
-        pass
+        raise NotImplementedError
+
+    def _score_from_errors(self, errors: torch.Tensor) -> torch.Tensor:
+        errors = errors - self.mean
+        return F.bilinear(errors, errors, self.precision.unsqueeze(0)).squeeze(-1)
+
+    def compute(self) -> torch.Tensor:
+        errors = self._errors[self.model.prediction_horizon - 1:-self.model.prediction_horizon + 1]
+        errors = torch_utils.nested_list2tensor(errors)
+        errors = errors.view(errors.shape[0], -1)
+        scores = self._score_from_errors(errors)
+        self.reset_state()
+        return scores
 
     def compute_offline_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         raise NotImplementedError
 
     def format_online_targets(self, targets: Tuple[torch.Tensor, ...]) -> torch.Tensor:
-        pass
+        raise NotImplementedError
 
     def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
-        errors = []
+        self.reset_state()
         labels = []
-        # Compute mean and covariance over the entire validation dataset
-        counter = 0
         for b_inputs, b_targets in dataset:
             b_inputs = tuple(b_inp.to(self.dummy.device) for b_inp in b_inputs)
             b_targets = tuple(b_tar.to(self.dummy.device) for b_tar in b_targets)
-            with torch.no_grad():
-                pred = self.model(b_inputs)
 
             label, target = b_targets
 
-            error = target - pred
-            for j in range(error.shape[0]):
-                for j2 in range(error.shape[1]):
-                    index = counter + j + j2
-                    if len(errors) <= index:
-                        errors.append([])
-                    errors[counter + j + j2].append(error[j, j2])
-            counter += error.shape[1]
+            self.forward((b_inputs[0], target))
 
             labels.append(label[-1].cpu())
 
-        errors = errors[self.model.prediction_horizon - 1:-self.model.prediction_horizon + 1]
-        errors = torch_utils.nested_list2tensor(errors)
-        errors = errors.view(errors.shape[0], -1)
         labels = torch.cat(labels, dim=0)
         labels = labels[:-self.model.prediction_horizon + 1]
 
-        errors -= self.mean
-        scores = F.bilinear(errors, errors, self.precision.unsqueeze(0)).squeeze(-1)
+        scores = self.compute()
 
         assert labels.shape == scores.shape
 
@@ -194,17 +215,23 @@ class LSTMS2SPredictionAnomalyDetector(PredictionAnomalyDetector):
 
         self.model = model
         self.alpha = halflife2alpha(half_life)
+        self.moving_avg_num = 0
+        self.moving_avg_denom = 0
+        self._errors = []
 
 
     def fit(self, dataset: torch.utils.data.DataLoader) -> None:
         pass
 
-    def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, torch.Tensor, float, float]) \
-            -> Tuple[torch.Tensor, float, float]:
-        # x: (T, B, D), target: (T, B, D), moving_avg: ()
-        x, target, moving_avg_num, moving_avg_denom = inputs
+    def reset_state(self) -> None:
+        self.moving_avg_num = 0
+        self.moving_avg_denom = 0
+        self._errors = []
 
-        with torch.no_grad():
+    def forward(self, inputs: Tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
+        # x: (T, B, D), target: (T, B, D)
+        x, target = inputs
+        with torch.inference_mode():
             x_pred = self.model((x,))
 
         sq_error = target - x_pred
@@ -213,9 +240,40 @@ class LSTMS2SPredictionAnomalyDetector(PredictionAnomalyDetector):
 
         T, B = sq_error.shape
         sq_error = sq_error.T.flatten()
-        moving_avg_num, moving_avg_denom = torch_utils.exponential_moving_avg_(sq_error, self.alpha,
-                                                                               avg_num=moving_avg_num,
-                                                                               avg_denom=moving_avg_denom)
+        self.moving_avg_num, self.moving_avg_denom = torch_utils.exponential_moving_avg_(
+            sq_error,
+            self.alpha,
+            avg_num=self.moving_avg_num,
+            avg_denom=self.moving_avg_denom,
+        )
+
+        sq_error = sq_error.view(B, T).T
+        self._errors.append(sq_error)
+        return sq_error
+
+    def compute(self) -> torch.Tensor:
+        scores = torch.cat(self._errors, dim=1).transpose(0, 1).flatten()
+        self.reset_state()
+        return scores
+
+    def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, torch.Tensor, float, float]) \
+            -> Tuple[torch.Tensor, float, float]:
+        x, target, moving_avg_num, moving_avg_denom = inputs
+        with torch.inference_mode():
+            x_pred = self.model((x,))
+
+        sq_error = target - x_pred
+        torch.square(sq_error, out=sq_error)
+        sq_error = torch.sum(sq_error, dim=-1)
+
+        T, B = sq_error.shape
+        sq_error = sq_error.T.flatten()
+        moving_avg_num, moving_avg_denom = torch_utils.exponential_moving_avg_(
+            sq_error,
+            self.alpha,
+            avg_num=moving_avg_num,
+            avg_denom=moving_avg_denom,
+        )
 
         return sq_error.view(B, T).T, moving_avg_num, moving_avg_denom
 
@@ -223,13 +281,11 @@ class LSTMS2SPredictionAnomalyDetector(PredictionAnomalyDetector):
         raise NotImplementedError
 
     def format_online_targets(self, targets: Tuple[torch.Tensor, ...]) -> torch.Tensor:
-        pass
+        raise NotImplementedError
 
     def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
-        errors = []
         labels = []
-        moving_avg_num = 0
-        moving_avg_denom = 0
+        self.reset_state()
 
         # Compute exp moving average of error score
         for b_inputs, b_targets in dataset:
@@ -239,13 +295,12 @@ class LSTMS2SPredictionAnomalyDetector(PredictionAnomalyDetector):
             x, = b_inputs
             label, target = b_targets
 
-            sq_error, moving_avg_num, moving_avg_denom = self.compute_online_anomaly_score((x, target, moving_avg_num,
-                                                                                            moving_avg_denom))
-            errors.append(sq_error)
+            self.forward((x, target))
             labels.append(label.cpu())
 
-        scores = torch.cat(errors, dim=1).transpose(0, 1).flatten()
         labels = torch.cat(labels, dim=1).transpose(0, 1).flatten()
+
+        scores = self.compute()
 
         assert labels.shape == scores.shape
 
