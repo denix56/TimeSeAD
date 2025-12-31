@@ -57,9 +57,6 @@ class AnomalyDetector(torch.nn.Module, abc.ABC):
         """
         raise NotImplementedError
 
-    def compute(self) -> torch.Tensor:
-        raise NotImplementedError
-
     def forward(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         return self.compute_online_anomaly_score(inputs)
 
@@ -131,15 +128,8 @@ class MAEReconstructionAnomalyDetector(MSEReconstructionAnomalyDetector):
 
 
 class PredictionAnomalyDetector(AnomalyDetector, abc.ABC):
-    @abc.abstractmethod
-    def forward(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
-        raise NotImplementedError
-
-    def reset_state(self) -> None:
-        return None
-
     def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
-        self.reset_state()
+        scores = []
         labels = []
         for b_inputs, b_targets in tqdm.tqdm(dataset):
             b_inputs = tuple(b_inp.to(self.dummy.device) for b_inp in b_inputs)
@@ -149,13 +139,14 @@ class PredictionAnomalyDetector(AnomalyDetector, abc.ABC):
             label, x_target = b_targets
 
             label = self.format_online_targets(b_targets)
-            self.forward((x, x_target))
+            score = self.compute_online_anomaly_score((x, x_target))
 
+            scores.append(score.cpu())
             labels.append(label.cpu())
 
+        scores = torch.cat(scores, dim=0)
         labels = torch.cat(labels, dim=0)
-        scores = self.compute()
 
         assert labels.shape == scores.shape
 
-        return labels, scores.cpu()
+        return labels, scores

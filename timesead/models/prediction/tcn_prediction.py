@@ -127,12 +127,6 @@ class TCNS2SPredictionAnomalyDetector(PredictionAnomalyDetector):
 
         self.model = model
         self.offset = offset
-        self._errors = []
-        self._counter = 0
-
-    def reset_state(self) -> None:
-        self._errors = []
-        self._counter = 0
 
     def fit(self, dataset: torch.utils.data.DataLoader) -> None:
         errors = []
@@ -142,18 +136,18 @@ class TCNS2SPredictionAnomalyDetector(PredictionAnomalyDetector):
         for b_inputs, b_targets in dataset:
             b_inputs = tuple(b_inp.to(self.dummy.device) for b_inp in b_inputs)
             b_targets = tuple(b_tar.to(self.dummy.device) for b_tar in b_targets)
-            with torch.inference_mode():
+            with torch.no_grad():
                 pred = self.model(b_inputs)
 
             target, = b_targets
 
             error = target[:, -self.offset:] - pred[:, -self.offset:]
-            for offset in range(error.shape[0] + error.shape[1] - 1):
-                index = counter + offset
-                if len(errors) <= index:
-                    errors.extend([[] for _ in range(index + 1 - len(errors))])
-                diag = torch.diagonal(error, offset=offset - (error.shape[0] - 1), dim1=0, dim2=1)
-                errors[index].extend(diag)
+            for j in range(error.shape[0]):
+                for j2 in range(error.shape[1]):
+                    index = counter + j + j2
+                    if len(errors) < index + 1:
+                        errors.append([])
+                    errors[counter + j + j2].append(error[j, j2])
             counter += error.shape[0]
 
         # We will have up to offset predictions for each point. We use the mean as the final prediction
@@ -178,60 +172,46 @@ class TCNS2SPredictionAnomalyDetector(PredictionAnomalyDetector):
         self.register_buffer('mean', mean)
         self.register_buffer('precision', precision)
 
-    def _accumulate_errors(self, x: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        with torch.inference_mode():
-            pred = self.model((x,))
-
-        error = target[:, -self.offset:] - pred[:, -self.offset:]
-        for offset in range(error.shape[0] + error.shape[1] - 1):
-            index = self._counter + offset
-            if len(self._errors) <= index:
-                self._errors.extend([[] for _ in range(index + 1 - len(self._errors))])
-            diag = torch.diagonal(error, offset=offset - (error.shape[0] - 1), dim1=0, dim2=1)
-            self._errors[index].extend(diag)
-        self._counter += error.shape[0]
-        return error
-
-    def forward(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
-        x, target = inputs
-        return self._accumulate_errors(x, target)
-
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
-        raise NotImplementedError
-
-    def _score_from_errors(self, errors: torch.Tensor) -> torch.Tensor:
-        errors = errors - self.mean
-        return F.bilinear(errors, errors, self.precision.unsqueeze(0)).squeeze(-1)
-
-    def compute(self) -> torch.Tensor:
-        errors = [sum(error) / len(error) for error in self._errors]
-        errors = torch.stack(errors, dim=0)
-        scores = self._score_from_errors(errors)
-        self.reset_state()
-        return scores
+        pass
 
     def compute_offline_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         raise NotImplementedError
 
     def format_online_targets(self, targets: Tuple[torch.Tensor, ...]) -> torch.Tensor:
-        label, _ = targets
-        return label[:, -self.offset]
+        pass
 
     def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
-        self.reset_state()
+        errors = []
         labels = []
+        # Compute mean and covariance over the entire validation dataset
+        counter = 0
         for b_inputs, b_targets in dataset:
             b_inputs = tuple(b_inp.to(self.dummy.device) for b_inp in b_inputs)
             b_targets = tuple(b_tar.to(self.dummy.device) for b_tar in b_targets)
+            with torch.no_grad():
+                pred = self.model(b_inputs)
+
             label, target = b_targets
 
-            self.forward((b_inputs[0], target))
+            error = target[:, -self.offset:] - pred[:, -self.offset:]
+            for j in range(error.shape[0]):
+                for j2 in range(error.shape[1]):
+                    index = counter + j + j2
+                    if len(errors) <= index:
+                        errors.append([])
+                    errors[counter + j + j2].append(error[j, j2])
+            counter += error.shape[0]
 
             labels.append(label[:, -self.offset].cpu())
 
+        # We will have up to offset predictions for each point. We use the mean as the final prediction
+        errors = [sum(error) / len(error) for error in errors]
+        errors = torch.stack(errors, dim=0)
         labels = torch.cat(labels, dim=0)
 
-        scores = self.compute()
+        errors -= self.mean
+        scores = F.bilinear(errors, errors, self.precision.unsqueeze(0)).squeeze(-1)
 
         assert labels.shape == scores.shape
 
@@ -248,73 +228,53 @@ class TCNPredictionAnomalyDetector(PredictionAnomalyDetector):
         super(TCNPredictionAnomalyDetector, self).__init__()
 
         self.model = model
-        self._errors = []
-        self._counter = 0
-
-    def reset_state(self) -> None:
-        self._errors = []
-        self._counter = 0
 
     def fit(self, dataset: torch.utils.data.DataLoader) -> None:
         pass
 
-    def _accumulate_errors(self, x: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        with torch.inference_mode():
-            pred = self.model((x,))
-
-        error = target - pred
-        for offset in range(error.shape[0] + error.shape[1] - 1):
-            index = self._counter + offset
-            if len(self._errors) <= index:
-                self._errors.extend([[] for _ in range(index + 1 - len(self._errors))])
-            diag = torch.diagonal(error, offset=offset - (error.shape[0] - 1), dim1=0, dim2=1)
-            self._errors[index].extend(diag)
-        self._counter += error.shape[0]
-        return error
-
-    def forward(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
-        x, target = inputs
-        return self._accumulate_errors(x, target)
-
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
-        raise NotImplementedError
-
-    def _score_from_errors(self, errors: torch.Tensor) -> torch.Tensor:
-        return torch_utils.batched_dot(errors, errors)
-
-    def compute(self) -> torch.Tensor:
-        errors = [sum(error) / len(error) for error in self._errors]
-        errors = torch.stack(errors, dim=0)
-        scores = self._score_from_errors(errors)
-        self.reset_state()
-        return scores
+        pass
 
     def compute_offline_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         raise NotImplementedError
 
     def format_online_targets(self, targets: Tuple[torch.Tensor, ...]) -> torch.Tensor:
-        label, _ = targets
-        return label[:, -1]
+        pass
 
     def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
-        self.reset_state()
+        errors = []
         labels = []
+        # Compute mean and covariance over the entire validation dataset
+        counter = 0
         for i, (b_inputs, b_targets) in enumerate(dataset):
             b_inputs = tuple(b_inp.to(self.dummy.device) for b_inp in b_inputs)
             b_targets = tuple(b_tar.to(self.dummy.device) for b_tar in b_targets)
+            with torch.no_grad():
+                pred = self.model(b_inputs)
 
             label, target = b_targets
 
-            self.forward((b_inputs[0], target))
+            error = target - pred
+            for j in range(error.shape[0]):
+                for j2 in range(error.shape[1]):
+                    index = counter + j + j2
+                    if len(errors) <= index:
+                        errors.append([])
+                    errors[index].append(error[j, j2])
+            counter += error.shape[0]
 
             if i == 0:
                 # Append the first few labels as well
                 labels.append(label[0, :-1].cpu())
             labels.append(label[:, -1].cpu())
 
+        # We will have up to prediction_horizon predictions for each point. We use the mean as the final prediction
+        errors = [sum(error) / len(error) for error in errors]
+        errors = torch.stack(errors, dim=0)
         labels = torch.cat(labels, dim=0)
 
-        scores = self.compute()
+        # Compute squared error
+        scores = torch_utils.batched_dot(errors, errors)
 
         assert labels.shape == scores.shape
 
