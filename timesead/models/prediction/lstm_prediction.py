@@ -105,11 +105,12 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
             target, = b_targets
 
             error = target - pred
+            flipped = torch.flip(error, dims=[0]).cpu()
             for offset in range(error.shape[0] + error.shape[1] - 1):
                 index = counter + offset
                 if len(errors) <= index:
                     errors.extend([[] for _ in range(index + 1 - len(errors))])
-                diag = torch.diagonal(error, offset=offset - (error.shape[0] - 1), dim1=0, dim2=1)
+                diag = torch.diagonal(flipped, offset=offset - (error.shape[0] - 1), dim1=0, dim2=1)
                 errors[index].extend(diag)
             counter += error.shape[1]
 
@@ -146,11 +147,12 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
             pred = self.model((x,))
 
         error = target - pred
+        flipped = torch.flip(error, dims=[0]).cpu()
         for offset in range(error.shape[0] + error.shape[1] - 1):
             index = self._counter + offset
             if len(self._errors) <= index:
                 self._errors.extend([[] for _ in range(index + 1 - len(self._errors))])
-            diag = torch.diagonal(error, offset=offset - (error.shape[0] - 1), dim1=0, dim2=1)
+            diag = torch.diagonal(flipped, offset=offset - (error.shape[0] - 1), dim1=0, dim2=1)
             self._errors[index].extend(diag)
         self._counter += error.shape[1]
         return error
