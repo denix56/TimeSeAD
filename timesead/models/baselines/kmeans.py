@@ -23,7 +23,7 @@ class KMeansAD(AnomalyDetector):
         self.input_shape = input_shape
 
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         for (b_inputs, b_targets) in dataset:
             data = b_inputs[0]
             batch_size, window_size, n_features = data.shape

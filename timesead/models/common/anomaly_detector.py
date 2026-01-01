@@ -89,7 +89,7 @@ class MSEReconstructionAnomalyDetector(AnomalyDetector):
         self.model = model
         self.batch_first = batch_first
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         pass
 
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
@@ -131,7 +131,7 @@ class PredictionAnomalyDetector(AnomalyDetector, abc.ABC):
     def forward(self, inputs: Tuple[torch.Tensor, ...]):
         pass
 
-    def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         scores = []
         labels = []
         for b_inputs, b_targets in tqdm.tqdm(dataset):

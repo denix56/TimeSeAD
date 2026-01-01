@@ -32,7 +32,7 @@ class KNNAD(AnomalyDetector):
                          method=self.method)
 
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         # Merge all batches as KNN can't do batch processing
         data_full = []
         for (b_inputs, b_targets) in dataset:

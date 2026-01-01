@@ -262,7 +262,7 @@ class TADGANAnomalyDetector(AnomalyDetector):
         self.model = model
         self.alpha = alpha
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         rec_scores = []
         disc_scores = []
         total = 0

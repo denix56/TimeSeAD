@@ -21,7 +21,7 @@ class LSTMAEOCSVMAnomalyDetector(AnomalyDetector):
         if normalize_data:
             self.ocsvm = make_pipeline(StandardScaler(), self.ocsvm)
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         latent_vectors = []
         self.model.eval()
         for b_inputs, b_targets in dataset:

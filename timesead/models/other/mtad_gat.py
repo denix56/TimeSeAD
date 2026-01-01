@@ -152,7 +152,7 @@ class MTAD_GATAnomalyDetector(AnomalyDetector):
         # Both (B,)
         return vae_score, pred_score
 
-    def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         # Collect all labels and scores from the dataset
         labels, rec_scores, pred_scores = [], [], []
 
@@ -192,7 +192,7 @@ class MTAD_GATAnomalyDetector(AnomalyDetector):
     def compute_offline_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         pass
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         pass
 
     def format_online_targets(self, targets: Tuple[torch.Tensor, ...]) -> torch.Tensor:

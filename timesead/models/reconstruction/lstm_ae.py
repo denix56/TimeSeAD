@@ -236,7 +236,7 @@ class LSTMAEAnomalyDetector(AnomalyDetector):
         torch.cholesky_inverse(cholesky, out=precision)
         return precision
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         errors = []
         mean = 0
         total = 0

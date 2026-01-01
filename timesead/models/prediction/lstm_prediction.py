@@ -127,7 +127,7 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
 
         return subseq_idx, window_idx
 
-    def fit(self, dataset: DataLoader, subseq_lengths: List[int], window_size: int) -> None:
+    def fit(self, dataset: DataLoader, *, subseq_lengths: List[int], window_size: int, **kwargs) -> None:
         errors = []
         device = self.dummy.device
         windows_per_seq = [max(subseq_len - window_size + 1, 0) for subseq_len in subseq_lengths]
@@ -201,7 +201,7 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
     def format_online_targets(self, targets: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         pass
 
-    def get_labels_and_scores(self, dataset: DataLoader, subseq_lengths: List[int], window_size: int) -> Tuple[Tensor, Tensor]:
+    def get_labels_and_scores(self, dataset: DataLoader, *, subseq_lengths: List[int], window_size: int, **kwargs) -> Tuple[Tensor, Tensor]:
         errors = []
         labels = []
         windows_per_seq = [max(subseq_len - window_size + 1, 0) for subseq_len in subseq_lengths]
@@ -275,7 +275,7 @@ class LSTMS2SPredictionAnomalyDetector(PredictionAnomalyDetector):
         self.alpha = halflife2alpha(half_life)
 
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         pass
 
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, torch.Tensor, float, float]) \
@@ -304,7 +304,7 @@ class LSTMS2SPredictionAnomalyDetector(PredictionAnomalyDetector):
     def format_online_targets(self, targets: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         pass
 
-    def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         errors = []
         labels = []
         moving_avg_num = 0

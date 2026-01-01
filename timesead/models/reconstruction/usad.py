@@ -127,7 +127,7 @@ class USADAnomalyDetector(AnomalyDetector):
         self.alpha = alpha
         self.beta = 1 - alpha
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         pass
 
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:

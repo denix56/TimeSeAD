@@ -99,7 +99,7 @@ class TCNAEAnomalyDetector(AnomalyDetector):
         self.model = model
         self.offline_window_size = offline_window_size
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         errors = []
         mean = 0
         total = 0

@@ -407,7 +407,7 @@ class THOCAnomalyDetector(AnomalyDetector):
     ) -> torch.Tensor:
         raise NotImplementedError
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         pass
 
     def format_online_targets(self, targets: Tuple[torch.Tensor, ...]) -> torch.Tensor:

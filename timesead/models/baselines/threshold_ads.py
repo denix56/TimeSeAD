@@ -104,7 +104,7 @@ class OOSAnomalyDetector(Base_ThresholdAD):
         """
         super(OOSAnomalyDetector, self).__init__(first_diffs, cum_method, feature_index, *args, **kwargs)
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         
         # Get minumum and maximum from train data as lower and upper thresholds
         if (self.lower_thresh is None) or (self.upper_thresh is None):
@@ -142,7 +142,7 @@ class IQRAnomalyDetector(Base_ThresholdAD):
 
         super(IQRAnomalyDetector, self).__init__(first_diffs, cum_method, feature_index, *args, **kwargs)
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
 
         if (self.lower_thresh is None) or (self.upper_thresh is None):
             mean, std, *_ = compute_feature_statistics(

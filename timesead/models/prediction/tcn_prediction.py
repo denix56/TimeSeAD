@@ -128,7 +128,7 @@ class TCNS2SPredictionAnomalyDetector(PredictionAnomalyDetector):
         self.model = model
         self.offset = offset
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         errors = []
 
         # Compute mean and covariance over the entire validation dataset
@@ -181,7 +181,7 @@ class TCNS2SPredictionAnomalyDetector(PredictionAnomalyDetector):
     def format_online_targets(self, targets: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         pass
 
-    def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         errors = []
         labels = []
         # Compute mean and covariance over the entire validation dataset
@@ -229,7 +229,7 @@ class TCNPredictionAnomalyDetector(PredictionAnomalyDetector):
 
         self.model = model
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         pass
 
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
@@ -241,7 +241,7 @@ class TCNPredictionAnomalyDetector(PredictionAnomalyDetector):
     def format_online_targets(self, targets: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         pass
 
-    def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         errors = []
         labels = []
         # Compute mean and covariance over the entire validation dataset

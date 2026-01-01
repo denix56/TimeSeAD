@@ -359,7 +359,7 @@ class GDNAnomalyDetector(PredictionAnomalyDetector):
     def compute_offline_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         pass
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         errors = []
         # Compute median and inter-quantile range over the entire validation dataset
         for i, (b_inputs, b_targets) in enumerate(dataset):

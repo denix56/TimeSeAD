@@ -49,7 +49,7 @@ class PCAAnomalyDetector(AnomalyDetector):
         else:
             self.model = PCA(n_components, **kwargs)
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
 
         data_all = get_data_all(dataset.dataset, take_fd=self.first_diffs)
         self.model.fit(data_all.cpu())

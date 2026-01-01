@@ -39,7 +39,7 @@ class WMDAnomalyDetector(AnomalyDetector):
         self.mean = None
         self.inv_std = None
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
 
         if (self.mean is None) or (self.inv_std is None):
             self.mean, std, *_ = compute_feature_statistics(
