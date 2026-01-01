@@ -1,4 +1,5 @@
 from typing import List, Union, Callable, Tuple, Sequence
+import logging
 
 import torch
 from torch.nn import functional as F
@@ -10,6 +11,8 @@ from ...models import BaseModel
 from ...data.transforms import PredictionTargetTransform, Transform
 from ...utils import torch_utils
 from ...utils.utils import halflife2alpha
+
+logger = logging.getLogger(__name__)
 
 
 class LSTMPrediction(BaseModel):
@@ -104,11 +107,13 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
                                      on_slice: Callable[[int, int, int], None],
                                      on_end: Callable[[], None]) -> Tuple[int, int]:
         batch_offset = 0
+        logger.info(f"batch_size: {batch_size}, windows_per_seq: {windows_per_seq}, subseq_idx: {subseq_idx}, window_idx: {window_idx}")
         while batch_offset < batch_size:
             while subseq_idx < len(windows_per_seq) and windows_per_seq[subseq_idx] == 0:
                 on_empty()
                 subseq_idx += 1
                 window_idx = 0
+            logger.info(f"subseq_idx: {subseq_idx}, window_idx: {window_idx}")
 
             if subseq_idx >= len(windows_per_seq):
                 return subseq_idx, window_idx
@@ -119,6 +124,8 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
 
             window_idx += take
             batch_offset += take
+
+            logger.info(f"remaining: {remaining}, take: {take}, window_idx: {window_idx}, batch_offset: {batch_offset}, subseq_idx: {subseq_idx},")
 
             if window_idx >= windows_per_seq[subseq_idx]:
                 on_end()
