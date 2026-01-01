@@ -128,6 +128,9 @@ class MAEReconstructionAnomalyDetector(MSEReconstructionAnomalyDetector):
 
 
 class PredictionAnomalyDetector(AnomalyDetector, abc.ABC):
+    def forward(self, inputs: Tuple[torch.Tensor, ...]):
+        pass
+
     def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
         scores = []
         labels = []
