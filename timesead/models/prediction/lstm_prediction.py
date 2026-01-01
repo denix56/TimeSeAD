@@ -27,7 +27,7 @@ class LSTMPrediction(BaseModel):
         if linear_hidden_layers is None:
             linear_hidden_layers = []
 
-        self.lstm = RNN('lstm', 's2fh', input_dim, lstm_hidden_dims)
+        self.lstm = RNN('lstm', 's2fh', input_dimension=input_dim, hidden_dimensions=lstm_hidden_dims)
         self.mlp = MLP(lstm_hidden_dims[-1], linear_hidden_layers, prediction_horizon * input_dim, linear_activation())
 
     def forward(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
@@ -41,7 +41,7 @@ class LSTMPrediction(BaseModel):
         # x_pred: (B, horizon, D)
         x_pred = x_pred.view(x_pred.shape[0], self.prediction_horizon, -1)
 
-        raise Exception(f"\n{hidden}, {x_pred}, {x.shape}, {hidden.shape}, {x_pred.shape}")
+        raise Exception(f"\n{hidden}, {x}, {torch.isnan(x).any()}, {torch.isnan(hidden).any()}, {torch.isnan(x_pred).any()}, {x.shape}, {hidden.shape}, {x_pred.shape}")
         # output: (horizon, B, D)
         return x_pred.transpose(0, 1)
 
