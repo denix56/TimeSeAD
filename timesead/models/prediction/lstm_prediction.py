@@ -100,6 +100,7 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
                 error_buckets.extend([[] for _ in range(end - len(error_buckets))])
             error_step = error[offset]
             bucket_slice = error_buckets[start:end]
+            logger.info(f"start: {start}, end: {end}, error_buckets: {len(error_buckets)}, bucket_slice: {len(bucket_slice)}, error_step: {error_step.shape}")
             error_buckets[start:end] = [bucket + [value] for bucket, value in zip(bucket_slice, error_step)]
 
     @staticmethod
