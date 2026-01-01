@@ -11,11 +11,26 @@ from sacred.serializer import restore
 from timesead_experiments.utils import make_experiment, load_dataset, make_experiment_tempfile, remove_sacred_garbage
 from timesead.data.dataset import collate_fn
 from timesead.data.transforms import WindowTransform
+from timesead.models.prediction import LSTMPredictionAnomalyDetector
 from timesead.utils.metadata import LOG_DIRECTORY
 from timesead.utils.utils import str2cls
 
 
 experiment = make_experiment()
+
+
+def get_subseq_lengths_and_window_size(dataset):
+    transform = dataset.sink_transform
+    window_size = getattr(transform, 'input_window_size', None)
+    if window_size is None:
+        window_size = getattr(transform, 'window_size', None)
+
+    parent = getattr(transform, 'parent', None)
+    subseq_lengths = parent.seq_len if parent is not None else dataset.seq_len
+    if isinstance(subseq_lengths, int):
+        subseq_lengths = [subseq_lengths] * len(parent if parent is not None else dataset)
+
+    return subseq_lengths, window_size
 
 
 def get_model_predictions(path, fold=0, device=None):
@@ -68,7 +83,11 @@ def get_model_predictions(path, fold=0, device=None):
     detector = detector.to(device)
     detector.eval()
 
-    labels, scores = detector.get_labels_and_scores(test_loader)
+    if isinstance(detector, LSTMPredictionAnomalyDetector):
+        subseq_lengths, window_size = get_subseq_lengths_and_window_size(test_loader.dataset)
+        labels, scores = detector.get_labels_and_scores(test_loader, subseq_lengths, window_size)
+    else:
+        labels, scores = detector.get_labels_and_scores(test_loader)
     labels = labels.cpu()
     scores = scores.cpu()
 

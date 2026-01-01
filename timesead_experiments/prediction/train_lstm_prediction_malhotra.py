@@ -10,6 +10,20 @@ from timesead.utils.utils import Bunch
 experiment = make_experiment(ingredients=[data_ingredient, training_ingredient])
 
 
+def get_subseq_lengths_and_window_size(dataset):
+    transform = dataset.sink_transform
+    window_size = getattr(transform, 'input_window_size', None)
+    if window_size is None:
+        window_size = getattr(transform, 'window_size', None)
+
+    parent = getattr(transform, 'parent', None)
+    subseq_lengths = parent.seq_len if parent is not None else dataset.seq_len
+    if isinstance(subseq_lengths, int):
+        subseq_lengths = [subseq_lengths] * len(parent if parent is not None else dataset)
+
+    return subseq_lengths, window_size
+
+
 def get_training_pipeline():
     return {
         'prediction': {'class': 'PredictionTargetTransform', 'args': {'window_size': 50, 'prediction_horizon': 3,
@@ -85,7 +99,8 @@ def get_anomaly_detector(model, val_loader, training, _run, save_detector=True):
         val_loader = trainer.val_iter
 
     detector = LSTMPredictionAnomalyDetector(model).to(training.device)
-    detector.fit(val_loader)
+    subseq_lengths, window_size = get_subseq_lengths_and_window_size(val_loader.dataset)
+    detector.fit(val_loader, subseq_lengths, window_size)
 
     if save_detector:
         with make_experiment_tempfile('final_model.pth', _run, mode='wb') as f:
@@ -115,4 +130,3 @@ def main(model_params, dataset, training, _run, train_detector=True):
         detector = None
 
     return dict(detector=detector, model=model)
-
