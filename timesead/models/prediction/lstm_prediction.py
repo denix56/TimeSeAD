@@ -115,6 +115,7 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
         errors -= mean
         cov = torch.matmul(errors.T, errors)
         cov /= errors.shape[0] - 1
+        cov = 0.5 * (cov + cov.T)
 
         for i in range(5, -3, -1):
             try:
