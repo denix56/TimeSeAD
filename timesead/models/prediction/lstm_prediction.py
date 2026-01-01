@@ -128,7 +128,7 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
                 # If the covariance matrix is not positive definite, we can try to add a small value to the diagonal until it becomes positive definite
                 continue
         else:
-            raise RuntimeError('Could not compute a valid covariance matrix!')
+            raise RuntimeError(f'Could not compute a valid covariance matrix! {cov}')
 
         precision = cov
         torch.cholesky_inverse(cholesky, out=precision)
