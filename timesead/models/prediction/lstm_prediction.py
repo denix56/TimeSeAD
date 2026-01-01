@@ -40,8 +40,6 @@ class LSTMPrediction(BaseModel):
         x_pred = self.mlp(hidden)
         # x_pred: (B, horizon, D)
         x_pred = x_pred.view(x_pred.shape[0], self.prediction_horizon, -1)
-
-        raise Exception(f"\n{hidden}, {x}, {torch.isnan(x).any()}, {torch.isnan(hidden).any()}, {torch.isnan(x_pred).any()}, {x.shape}, {hidden.shape}, {x_pred.shape}")
         # output: (horizon, B, D)
         return x_pred.transpose(0, 1)
 
@@ -72,8 +70,6 @@ class LSTMS2SPrediction(BaseModel):
         # x_pred: (T, B, D)
         x_pred = self.mlp(hidden)
 
-        raise Exception(f"{x.shape}, {hidden.shape}, {x_pred.shape} {hidden}, {x_pred}")
-
         return x_pred
 
 
@@ -97,9 +93,6 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
         for idx, (b_inputs, b_targets) in enumerate(dataset):
             b_inputs = tuple(b_inp.to(device) for b_inp in b_inputs)
             b_targets = tuple(b_tar.to(device) for b_tar in b_targets)
-            bb = any(torch.isnan(ii).any() for ii in b_inputs)
-            if bb:
-                raise ValueError(f"NaN in batch {idx}")
             with torch.no_grad():
                 pred = self.model(b_inputs)
 
