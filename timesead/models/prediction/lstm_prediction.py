@@ -91,6 +91,7 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
 
     @staticmethod
     def _append_window_errors(error_buckets: List[List[torch.Tensor]], error: torch.Tensor, window_start: int) -> None:
+        logger.info(f"window_start: {window_start}, error: {error.shape}")
         horizon, window_count = error.shape[:2]
         for offset in range(horizon):
             start = window_start + offset
