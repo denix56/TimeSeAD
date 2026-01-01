@@ -174,6 +174,11 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
                 batch_size, windows_per_seq, subseq_idx, window_idx, handle_empty, handle_slice, handle_end
             )
 
+        if window_idx > 0 and current_errors:
+            trim = self.model.prediction_horizon - 1
+            end = -trim if trim > 0 else None
+            errors.extend(current_errors[trim:end])
+
         errors = torch_utils.nested_list2tensor(errors)
         errors = errors.view(errors.shape[0], -1)
         mean = torch.mean(errors, dim=0)
@@ -259,6 +264,17 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
             subseq_idx, window_idx = self._consume_subsequence_batches(
                 batch_size, windows_per_seq, subseq_idx, window_idx, handle_empty, handle_slice, handle_end
             )
+        if window_idx > 0 and (current_errors or current_labels):
+            trim = self.model.prediction_horizon - 1
+            end = -trim if trim > 0 else None
+            logger.info(f"errors: {len(errors)}, labels: {len(current_errors)}, trim: {trim}, end: {end}")
+            errors.extend(current_errors[trim:end])
+            logger.info(f"errors: {len(errors)}")
+            if current_labels:
+                subseq_labels = torch.cat(current_labels, dim=0)
+                if trim > 0:
+                    subseq_labels = subseq_labels[:-trim]
+                labels.append(subseq_labels)
         logger.info(f"errors: {len(errors)}")
         errors = torch_utils.nested_list2tensor(errors)
         logger.info(f"errors: {errors.shape}")
