@@ -40,6 +40,8 @@ class LSTMPrediction(BaseModel):
         x_pred = self.mlp(hidden)
         # x_pred: (B, horizon, D)
         x_pred = x_pred.view(x_pred.shape[0], self.prediction_horizon, -1)
+
+        raise Exception(f"{x.shape}, {hidden.shape}, {x_pred.shape} {hidden}, {x_pred}")
         # output: (horizon, B, D)
         return x_pred.transpose(0, 1)
 
