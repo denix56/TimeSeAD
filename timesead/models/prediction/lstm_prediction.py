@@ -107,7 +107,7 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
                     errors[counter + j + j2].append(error[j, j2])
             counter += error.shape[1]
 
-        errors = errors[self.model.prediction_horizon - 1:-self.model.prediction_horizon + 1]
+        errors = errors[self.model.prediction_horizon - 1:(-self.model.prediction_horizon + 1) or None]
 
         errors = torch_utils.nested_list2tensor(errors)
         errors = errors.view(errors.shape[0], -1)
@@ -169,7 +169,7 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
 
             labels.append(label[-1].cpu())
 
-        errors = errors[self.model.prediction_horizon - 1:-self.model.prediction_horizon + 1]
+        errors = errors[self.model.prediction_horizon - 1:(-self.model.prediction_horizon + 1) or None]
         errors = torch_utils.nested_list2tensor(errors)
         errors = errors.view(errors.shape[0], -1)
         labels = torch.cat(labels, dim=0)
