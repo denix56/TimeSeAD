@@ -94,9 +94,12 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
 
         # Compute mean and covariance over the entire validation dataset
         counter = 0
-        for b_inputs, b_targets in dataset:
+        for idx, (b_inputs, b_targets) in enumerate(dataset):
             b_inputs = tuple(b_inp.to(device) for b_inp in b_inputs)
             b_targets = tuple(b_tar.to(device) for b_tar in b_targets)
+            bb = any(torch.isnan(ii).any() for ii in b_inputs)
+            if bb:
+                raise ValueError(f"NaN in batch {idx}")
             with torch.no_grad():
                 pred = self.model(b_inputs)
 
