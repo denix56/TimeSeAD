@@ -17,6 +17,7 @@ from timesead_experiments.utils import make_experiment, make_experiment_tempfile
     SerializationGuard, run_command, serialization_guard, remove_sacred_garbage
 from timesead.evaluation import Evaluator
 from timesead.data.dataset import collate_fn
+from timesead.models.prediction import LSTMPredictionAnomalyDetector
 from timesead.utils.metadata import LOG_DIRECTORY
 from timesead.utils.utils import Bunch, param_grid_to_list_of_dicts, str2cls
 from timesead.utils.torch_utils import set_threads, clear_gpu_memory
@@ -24,6 +25,20 @@ from timesead.utils.rng_utils import set_seed
 
 
 experiment = make_experiment(ingredients=[data_ingredient])
+
+
+def get_subseq_lengths_and_window_size(dataset):
+    transform = dataset.sink_transform
+    window_size = getattr(transform, 'input_window_size', None)
+    if window_size is None:
+        window_size = getattr(transform, 'window_size', None)
+
+    parent = getattr(transform, 'parent', None)
+    subseq_lengths = parent.seq_len if parent is not None else dataset.seq_len
+    if isinstance(subseq_lengths, int):
+        subseq_lengths = [subseq_lengths] * len(parent if parent is not None else dataset)
+
+    return subseq_lengths, window_size
 
 
 def train_once(config_updates, params, seed):
@@ -120,7 +135,11 @@ def evaluate_once(train_id, config_updates, detector_param_updates, params, val_
 
         detector.eval()
 
-        labels, scores = detector.get_labels_and_scores(val_loader)
+        if isinstance(detector, LSTMPredictionAnomalyDetector):
+            subseq_lengths, window_size = get_subseq_lengths_and_window_size(val_loader.dataset)
+            labels, scores = detector.get_labels_and_scores(val_loader, subseq_lengths, window_size)
+        else:
+            labels, scores = detector.get_labels_and_scores(val_loader)
 
         end = time.perf_counter()
 
@@ -400,7 +419,11 @@ def main(params, training_param_grid, training_param_updates, detector_param_gri
             test_loader = torch.utils.data.DataLoader(test_ds, batch_size=params.batch_size, num_workers=0,
                                                       collate_fn=collate_fn(params.batch_dim))
 
-            labels, scores = detector.get_labels_and_scores(test_loader)
+            if isinstance(detector, LSTMPredictionAnomalyDetector):
+                subseq_lengths, window_size = get_subseq_lengths_and_window_size(test_loader.dataset)
+                labels, scores = detector.get_labels_and_scores(test_loader, subseq_lengths, window_size)
+            else:
+                labels, scores = detector.get_labels_and_scores(test_loader)
             for metric in params.evaluation_metrics:
                 test_score, info = test_evaluator.__getattribute__(metric)(labels, scores)
                 test_scores[metric].append(dict(score=test_score, info=info, test_fold=test_fold))

@@ -2,6 +2,8 @@ from typing import List, Union, Callable, Tuple, Sequence
 
 import torch
 from torch.nn import functional as F
+from torch.utils.data import DataLoader
+from torch import Tensor
 
 from ..common import RNN, MLP, PredictionAnomalyDetector
 from ...models import BaseModel
@@ -84,12 +86,56 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
 
         self.model = model
 
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    @staticmethod
+    def _append_window_errors(error_buckets: List[List[torch.Tensor]], error: torch.Tensor, window_start: int) -> None:
+        horizon, window_count = error.shape[:2]
+        for offset in range(horizon):
+            start = window_start + offset
+            end = start + window_count
+            if len(error_buckets) < end:
+                error_buckets.extend([[] for _ in range(end - len(error_buckets))])
+            error_step = error[offset]
+            bucket_slice = error_buckets[start:end]
+            error_buckets[start:end] = [bucket + [value] for bucket, value in zip(bucket_slice, error_step)]
+
+    @staticmethod
+    def _consume_subsequence_batches(batch_size: int, windows_per_seq: List[int], subseq_idx: int, window_idx: int,
+                                     on_empty: Callable[[], None],
+                                     on_slice: Callable[[int, int, int], None],
+                                     on_end: Callable[[], None]) -> Tuple[int, int]:
+        batch_offset = 0
+        while batch_offset < batch_size:
+            while subseq_idx < len(windows_per_seq) and windows_per_seq[subseq_idx] == 0:
+                on_empty()
+                subseq_idx += 1
+                window_idx = 0
+
+            if subseq_idx >= len(windows_per_seq):
+                return subseq_idx, window_idx
+
+            remaining = windows_per_seq[subseq_idx] - window_idx
+            take = min(batch_size - batch_offset, remaining)
+            on_slice(window_idx, batch_offset, take)
+
+            window_idx += take
+            batch_offset += take
+
+            if window_idx >= windows_per_seq[subseq_idx]:
+                on_end()
+                subseq_idx += 1
+                window_idx = 0
+
+        return subseq_idx, window_idx
+
+    def fit(self, dataset: DataLoader, subseq_lengths: List[int], window_size: int) -> None:
         errors = []
         device = self.dummy.device
+        windows_per_seq = [max(subseq_len - window_size + 1, 0) for subseq_len in subseq_lengths]
+        current_errors = []
+        subseq_idx = 0
+        window_idx = 0
 
         # Compute mean and covariance over the entire validation dataset
-        counter = 0
         for idx, (b_inputs, b_targets) in enumerate(dataset):
             b_inputs = tuple(b_inp.to(device) for b_inp in b_inputs)
             b_targets = tuple(b_tar.to(device) for b_tar in b_targets)
@@ -99,15 +145,25 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
             target, = b_targets
 
             error = target - pred
-            for j in range(error.shape[0]):
-                for j2 in range(error.shape[1]):
-                    index = counter + j + j2
-                    if len(errors) < index + 1:
-                        errors.append([])
-                    errors[counter + j + j2].append(error[j, j2])
-            counter += error.shape[1]
+            batch_size = error.shape[1]
+            def handle_empty() -> None:
+                nonlocal current_errors
+                current_errors = []
 
-        errors = errors[self.model.prediction_horizon - 1:(-self.model.prediction_horizon + 1) or None]
+            def handle_slice(window_start: int, offset: int, take: int) -> None:
+                error_slice = error[:, offset:offset + take]
+                self._append_window_errors(current_errors, error_slice, window_start)
+
+            def handle_end() -> None:
+                nonlocal current_errors
+                trim = self.model.prediction_horizon - 1
+                end = -trim if trim > 0 else None
+                errors.extend(current_errors[trim:end])
+                current_errors = []
+
+            subseq_idx, window_idx = self._consume_subsequence_batches(
+                batch_size, windows_per_seq, subseq_idx, window_idx, handle_empty, handle_slice, handle_end
+            )
 
         errors = torch_utils.nested_list2tensor(errors)
         errors = errors.view(errors.shape[0], -1)
@@ -145,11 +201,15 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
     def format_online_targets(self, targets: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         pass
 
-    def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_labels_and_scores(self, dataset: DataLoader, subseq_lengths: List[int], window_size: int) -> Tuple[Tensor, Tensor]:
         errors = []
         labels = []
+        windows_per_seq = [max(subseq_len - window_size + 1, 0) for subseq_len in subseq_lengths]
+        current_errors = []
+        current_labels = []
+        subseq_idx = 0
+        window_idx = 0
         # Compute mean and covariance over the entire validation dataset
-        counter = 0
         for b_inputs, b_targets in dataset:
             b_inputs = tuple(b_inp.to(self.dummy.device) for b_inp in b_inputs)
             b_targets = tuple(b_tar.to(self.dummy.device) for b_tar in b_targets)
@@ -159,21 +219,39 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
             label, target = b_targets
 
             error = target - pred
-            for j in range(error.shape[0]):
-                for j2 in range(error.shape[1]):
-                    index = counter + j + j2
-                    if len(errors) <= index:
-                        errors.append([])
-                    errors[counter + j + j2].append(error[j, j2])
-            counter += error.shape[1]
+            batch_size = error.shape[1]
+            label_at_end = label[-1].detach().cpu()
 
-            labels.append(label[-1].cpu())
+            def handle_empty() -> None:
+                nonlocal current_errors, current_labels
+                current_errors = []
+                current_labels = []
 
-        errors = errors[self.model.prediction_horizon - 1:(-self.model.prediction_horizon + 1) or None]
+            def handle_slice(window_start: int, offset: int, take: int) -> None:
+                error_slice = error[:, offset:offset + take]
+                self._append_window_errors(current_errors, error_slice, window_start)
+                current_labels.append(label_at_end[offset:offset + take])
+
+            def handle_end() -> None:
+                nonlocal current_errors, current_labels
+                trim = self.model.prediction_horizon - 1
+                end = -trim if trim > 0 else None
+                errors.extend(current_errors[trim:end])
+                if current_labels:
+                    subseq_labels = torch.cat(current_labels, dim=0)
+                    if trim > 0:
+                        subseq_labels = subseq_labels[:-trim]
+                    labels.append(subseq_labels)
+                current_errors = []
+                current_labels = []
+
+            subseq_idx, window_idx = self._consume_subsequence_batches(
+                batch_size, windows_per_seq, subseq_idx, window_idx, handle_empty, handle_slice, handle_end
+            )
+
         errors = torch_utils.nested_list2tensor(errors)
         errors = errors.view(errors.shape[0], -1)
         labels = torch.cat(labels, dim=0)
-        labels = labels[:-self.model.prediction_horizon + 1]
 
         errors -= self.mean
         scores = F.bilinear(errors, errors, self.precision.unsqueeze(0)).squeeze(-1)
