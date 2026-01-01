@@ -11,6 +11,9 @@ from ...utils.complex_ops import as_real, complex_abs, is_compile_mode
 from ..layers.embed import DataEmbedding
 from ..layers.inception import InceptionBlockV1
 
+torch._dynamo.config.capture_scalar_outputs = True
+torch._dynamo.config.capture_dynamic_output_shape_ops = True
+
 
 def FFT_for_Period(x: torch.Tensor, k: int = 2) -> Tuple[torch.Tensor, torch.Tensor]:
     # [B, C, T]
