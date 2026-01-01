@@ -70,6 +70,8 @@ class LSTMS2SPrediction(BaseModel):
         # x_pred: (T, B, D)
         x_pred = self.mlp(hidden)
 
+        raise Exception(f"{x.shape}, {hidden.shape}, {x_pred.shape} {hidden}, {x_pred}")
+
         return x_pred
 
 
