@@ -24,7 +24,7 @@ def FFT_for_Period(x: torch.Tensor, k: int = 2) -> Tuple[torch.Tensor, torch.Ten
     frequency_amplitudes[0] = 0
     top_list = torch.topk(frequency_amplitudes, k).indices
     period = torch.div(x.shape[2], top_list, rounding_mode='floor')
-    return period.to(torch.int64).tolist(), amplitudes.mean(-2)[:, top_list]
+    return period.to(torch.int64), amplitudes.mean(-2)[:, top_list]
 
 
 class TimesBlock(nn.Module):
@@ -53,10 +53,11 @@ class TimesBlock(nn.Module):
         assert T == self.seq_len
         periods, period_weight = FFT_for_Period(x, self.top_k)
         res = []
-        for period in periods:
+        for i in range(self.top_k):
+            period = periods[i]
             assert period > 0
             assert period <= T
-            out = F.pad(x, (0, -self.seq_len % period))
+            out = F.pad(x, (0, (-self.seq_len) % period))
             assert out.shape[-1] % period == 0
             out = out.unflatten(-1, (-1, period))
             # 2D conv: from 1d Variation to 2d Variation
