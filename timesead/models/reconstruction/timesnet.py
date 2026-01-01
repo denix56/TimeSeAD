@@ -55,6 +55,10 @@ class TimesBlock(nn.Module):
         x = x.mT.contiguous()
         assert T == self.seq_len
         periods, period_weight = FFT_for_Period(x, self.top_k)
+
+        if torch._dynamo.is_compiling():
+            torch._dynamo.graph_break()
+
         res = []
         for i in range(self.top_k):
             period = periods[i]
