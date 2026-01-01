@@ -38,7 +38,7 @@ class AnomalyDetector(torch.nn.Module, abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def fit(self, dataset: torch.utils.data.DataLoader) -> None:
+    def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
         """
         Fit this anomaly detector on a dataset. Note that we assume only normal data here.
 
@@ -60,7 +60,7 @@ class AnomalyDetector(torch.nn.Module, abc.ABC):
     def forward(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         return self.compute_online_anomaly_score(inputs)
 
-    def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_labels_and_scores(self, dataset: torch.utils.data.DataLoader, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         # Collect all labels and scores from the dataset
         labels, scores = [], []
 
