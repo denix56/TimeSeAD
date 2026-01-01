@@ -258,6 +258,7 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
             )
 
         errors = torch_utils.nested_list2tensor(errors)
+        logger.info(f"errors: {errors.shape}")
         errors = errors.view(errors.shape[0], -1)
         labels = torch.cat(labels, dim=0)
 
