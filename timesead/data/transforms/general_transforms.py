@@ -220,7 +220,7 @@ class MagScaleTransform(_BaseInputTransform):
         if self.magnitude <= 0:
             return tensor
 
-        rand = torch.abs(torch.randn((), device=tensor.device, dtype=tensor.dtype)).item()
+        rand = torch.abs(torch.randn((), device=tensor.device, dtype=tensor.dtype))
         scale = (1 - (rand * self.magnitude) / 2) if random.random() > 1 / 3 else (1 + rand * self.magnitude)
         return tensor * scale
 
