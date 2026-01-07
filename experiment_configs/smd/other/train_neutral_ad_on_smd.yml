@@ -1,0 +1,46 @@
+params:
+  training_experiment: other.train_neutral_ad
+  validation_metric: best_ts_f1_score
+  evaluation_metrics:
+    - best_ts_f1_score
+    - ts_auprc
+    - best_ts_f1_score_classic
+    - ts_auprc_unweighted
+    - best_f1_score
+    - auprc
+dataset:
+  name: SMDDataset
+training_param_updates:
+  dataset:
+    name: SMDDataset
+  training:
+    epochs: 100
+    batch_size: 32
+    drop_last: True
+    loss:
+      args:
+        temperature: 0.1
+        use_euclidean: False
+training_param_grid:
+  model_params:
+    num_trans:
+      - 4
+    trans_type:
+      - residual
+    enc_hdim:
+      - 32
+    enc_nlayers:
+      - 4
+    trans_nlayers:
+      - 4
+    latent_dim:
+      - 32
+    batch_norm:
+      - False
+    enc_bias:
+      - False
+  training:
+    optimizer:
+      args:
+        lr:
+          - 1.0e-3
