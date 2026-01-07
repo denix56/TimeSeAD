@@ -7,7 +7,7 @@ name = "TimeSeAD"
 version = "0.0.2"
 description = "TimeSeAD - Library for Benchmarking Multivariate Time Series Anomaly Detection"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.12"
 
 authors = [
@@ -42,6 +42,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+extensions = [
+  "timesead_ext @ git+https://github.com/denix56/TimeSeAD-extensions.git"
+]
 experiments = [
   "pymongo>=3.12",
   "sacred>=0.8",
