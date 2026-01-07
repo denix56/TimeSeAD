@@ -43,7 +43,7 @@ dependencies = [
 
 [project.optional-dependencies]
 extensions = [
-  "timesead_ext @ git+https://github.com/denix56/TimeSeAD-extensions.git"
+  "timesead-extensions @ git+https://github.com/denix56/TimeSeAD-extensions.git"
 ]
 experiments = [
   "pymongo>=3.12",
