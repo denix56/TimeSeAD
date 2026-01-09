@@ -255,13 +255,13 @@ class TimeWarpTransform(_BaseInputTransform):
         seq_len = tensor.shape[0]
         base_idx = torch.arange(seq_len, device=tensor.device, dtype=tensor.dtype)
 
-        rand_curve = torch.tensor(np.random.randn(self.order, seq_len), device=tensor.device, dtype=tensor.dtype)
+        rand_curve = torch.randn((self.order, seq_len), device=tensor.device, dtype=tensor.dtype)
         weights = torch.abs(rand_curve).mean(dim=0)
         cum_curve = torch.cumsum(weights, dim=0)
         cum_curve = (cum_curve - cum_curve.min()) / (cum_curve.max() - cum_curve.min() + torch.finfo(tensor.dtype).eps)
 
         warped_positions = (1 - self.magnitude) * base_idx + self.magnitude * cum_curve * (seq_len - 1)
-        warped_positions, _ = torch.sort(warped_positions)
+        warped_positions = torch.clamp(warped_positions, 0, seq_len - 1)
         return _linear_interpolate_sequence(tensor, warped_positions)
 
 
