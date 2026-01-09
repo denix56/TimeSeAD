@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+import logging
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -16,6 +18,19 @@ from ...utils.complex_ops import (
     complex_energy,
     is_compile_mode,
 )
+
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+torch.set_printoptions(
+    threshold=float('inf'),  # print all elements
+    linewidth=200,           # avoid line wrapping
+)
+
+def log_debug(tensor: torch.Tensor, debug: bool):
+    if debug and not torch.isfinite(tensor).all():
+        logger.debug("%s", tensor, stacklevel=2)
 
 
 def get_frequency_modes(seq_len, modes=64, mode_select_method="random"):
@@ -68,6 +83,7 @@ class FourierBlock(nn.Module):
         topk_per_head: bool = False,
         topk_ema: float = 0.9,
         scatter_freq: bool = False,
+        debug: bool = False,
     ):
         super().__init__()
         assert in_channels % num_heads == 0
@@ -131,6 +147,8 @@ class FourierBlock(nn.Module):
             self._init_complex_lowrank_(self.U0, self.V0)
 
         self.register_buffer("_running_score", torch.empty(0), persistent=False)
+
+        self.debug = debug
 
     def _init_complex_(self, p: torch.Tensor, fan_in: int) -> None:
         if self.w_init == "random":
@@ -255,7 +273,14 @@ class FourierBlock(nn.Module):
         x_in = q
         x = q.to(torch.float32)
 
+        log_debug_fn = lambda x: log_debug(x, self.debug)
+
+        log_debug_fn(x)
+
         x_ft_c = torch.fft.rfft(x, dim=1, norm=self.fft_norm)  # (B,F,H,Ein)
+
+        log_debug_fn(x_ft_c)
+
         use_real = is_compile_mode()
         x_ft = as_real(x_ft_c) if use_real else x_ft_c
         F = x_ft.shape[1]
@@ -284,6 +309,7 @@ class FourierBlock(nn.Module):
                 x_sel = x_sel * scale(fs_hk.transpose(0, 1))
 
         out_ft = x_ft.new_zeros((B, F, H, self.Eout, 2)) if use_real else x_ft.new_zeros((B, F, H, self.Eout))
+        log_debug_fn(x_sel)
 
         if not self.lrfop:
             # IMPORTANT FIX #1: weights has max_slots >= K
@@ -300,7 +326,7 @@ class FourierBlock(nn.Module):
                 out_sel = complex_einsum_lowrank(x_sel, as_real(U), as_real(V))
             else:
                 out_sel = torch.einsum("bkhi,khir,khor->bkho", x_sel, U, V)
-
+        log_debug_fn(out_sel)
         if self.scatter_freq:
             if idx.dim() == 1:
                 out_ft.index_copy_(1, idx, out_sel)
@@ -314,9 +340,11 @@ class FourierBlock(nn.Module):
             y_ft = as_complex(out_ft.permute(0, 2, 3, 1, 4))
         else:
             y_ft = out_ft.permute(0, 2, 3, 1)
+        log_debug_fn(y_ft)
         y = torch.fft.irfft(
             y_ft, n=L, dim=-1, norm=self.fft_norm
         ).permute(0, 3, 1, 2).to(x_in.dtype)
+        log_debug_fn(y)
 
         return (y, None)
 
