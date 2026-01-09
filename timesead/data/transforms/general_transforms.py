@@ -49,7 +49,7 @@ class SubsampleTransform(Transform):
         self.subsampling_factor = subsampling_factor
         if aggregation == 'mean':
             self.aggregate_fn = functools.partial(torch.mean, dim=1)
-        if aggregation == 'last':
+        elif aggregation == 'last':
             self.aggregate_fn = functools.partial(getitem, item=(slice(None), -1))
         else:  # 'first'
             self.aggregate_fn = functools.partial(getitem, item=(slice(None), 0))
