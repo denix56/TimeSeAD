@@ -94,6 +94,8 @@ class EIFAD(AnomalyDetector):
         data_full = torch.cat(data_full, dim=0)
 
         data = data_full.cpu().detach().numpy().astype(np.float32)
+        if not np.isfinite(data).all():
+            raise RuntimeError('NaNs in input data')
 
         self.model = self.model.fit(data)
 
@@ -113,6 +115,8 @@ class EIFAD(AnomalyDetector):
 
         # Convert to numpy
         data = data.cpu().detach().numpy().astype(np.float32)
+        if not np.isfinite(data).all():
+            raise RuntimeError('NaNs in input data')
         if self.parallel_predict:
             with parallel_backend("threading", n_jobs=self.n_jobs):
                 scores = self.model.score_samples(data)
