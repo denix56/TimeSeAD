@@ -1,5 +1,6 @@
 # Implementation derived from Time Series Library https://github.com/thuml/Time-Series-Library
 from typing import Tuple
+import logging
 
 import torch
 import torch.nn as nn
@@ -8,6 +9,19 @@ from .. import BaseModel
 from ..layers import DataEmbedding
 from ..layers import AutoCorrelationLayer, FourierBlock, MultiWaveletTransform
 from ..layers.autoformer_encdec import Encoder, EncoderLayer, CustomLayerNorm, SeriesDecomp
+
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+torch.set_printoptions(
+    threshold=float('inf'),  # print all elements
+    linewidth=200,           # avoid line wrapping
+)
+
+def log_debug(tensor: torch.Tensor, debug: bool):
+    if debug and not torch.isfinite(tensor).all():
+        logger.debug("%s", tensor, stacklevel=2)
 
 
 class FEDformer(BaseModel):
@@ -97,9 +111,11 @@ class FEDformer(BaseModel):
 
     def forward(self, inputs: Tuple[torch.Tensor, ...]) -> Tuple[torch.Tensor, ...]:
         x_enc = inputs[0].contiguous()
+        log_debug(x_enc, debug=True)
         enc_out = self.enc_embedding(x_enc)
+        log_debug(enc_out, debug=True)
         enc_out, attns = self.encoder(enc_out, attn_mask=None)
-
+        log_debug(enc_out, debug=True)
         dec_out = self.projection(enc_out)
         return dec_out
 

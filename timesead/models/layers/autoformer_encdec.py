@@ -3,6 +3,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import logging
+
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+torch.set_printoptions(
+    threshold=float('inf'),  # print all elements
+    linewidth=200,           # avoid line wrapping
+)
+
+def log_debug(tensor: torch.Tensor, debug: bool):
+    if debug and not torch.isfinite(tensor).all():
+        logger.debug("%s", tensor, stacklevel=2)
+
 
 class CustomLayerNorm(nn.Module):
     """
@@ -84,16 +99,24 @@ class EncoderLayer(nn.Module):
         self.activation = F.relu if activation == "relu" else F.gelu
 
     def forward(self, x, attn_mask=None):
+        log_debug(x, debug=True)
         new_x, attn = self.attention(
             x, x, x,
             attn_mask=attn_mask
         )
+        log_debug(new_x, debug=True)
         x = x + self.dropout(new_x)
+        log_debug(x, debug=True)
         x, _ = self.decomp1(x)
+        log_debug(x, debug=True)
         y = x
+        log_debug(y, debug=True)
         y = self.dropout(self.activation(self.conv1(y.transpose(-1, 1))))
+        log_debug(y, debug=True)
         y = self.dropout(self.conv2(y).transpose(-1, 1))
+        log_debug(y, debug=True)
         res, _ = self.decomp2(x + y)
+        log_debug(res, debug=True)
         return res, attn
 
 
@@ -112,17 +135,23 @@ class Encoder(nn.Module):
         attns = []
         if self.conv_layers is not None:
             for attn_layer, conv_layer in zip(self.attn_layers, self.conv_layers):
+                log_debug(x, debug=True)
                 x, attn = attn_layer(x, attn_mask=attn_mask)
+                log_debug(x, debug=True)
                 x = conv_layer(x)
+                log_debug(x, debug=True)
                 attns.append(attn)
             x, attn = self.attn_layers[-1](x)
             attns.append(attn)
         else:
             for attn_layer in self.attn_layers:
+                log_debug(x, debug=True)
                 x, attn = attn_layer(x, attn_mask=attn_mask)
+                log_debug(x, debug=True)
                 attns.append(attn)
 
         if self.norm is not None:
             x = self.norm(x)
+            log_debug(x, debug=True)
 
         return x, attns
