@@ -281,7 +281,7 @@ class FourierBlock(nn.Module):
 
         log_debug_fn(x_ft_c)
 
-        use_real = is_compile_mode()
+        use_real = not is_compile_mode()
         x_ft = as_real(x_ft_c) if use_real else x_ft_c
         F = x_ft.shape[1]
         assert F == L // 2 + 1
