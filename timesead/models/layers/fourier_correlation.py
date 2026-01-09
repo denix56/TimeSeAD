@@ -83,7 +83,7 @@ class FourierBlock(nn.Module):
         topk_per_head: bool = False,
         topk_ema: float = 0.9,
         scatter_freq: bool = False,
-        debug: bool = False,
+        debug: bool = True,
     ):
         super().__init__()
         assert in_channels % num_heads == 0
