@@ -271,81 +271,82 @@ class FourierBlock(nn.Module):
         assert L == self.seq_len
 
         x_in = q
-        x = q.to(torch.float32)
+        with torch.autocast(device_type=q.device.type, enabled=False):
+            x = q.float()
+            log_debug_fn = lambda x: log_debug(x, self.debug)
 
-        log_debug_fn = lambda x: log_debug(x, self.debug)
+            log_debug_fn(x)
 
-        log_debug_fn(x)
+            x_ft_c = torch.fft.rfft(x, dim=1, norm=self.fft_norm)  # (B,F,H,Ein)
 
-        x_ft_c = torch.fft.rfft(x, dim=1, norm=self.fft_norm)  # (B,F,H,Ein)
+            log_debug_fn(x_ft_c)
 
-        log_debug_fn(x_ft_c)
+            use_real = not is_compile_mode()
+            x_ft = as_real(x_ft_c) if use_real else x_ft_c
+            F = x_ft.shape[1]
+            assert F == L // 2 + 1
 
-        use_real = not is_compile_mode()
-        x_ft = as_real(x_ft_c) if use_real else x_ft_c
-        F = x_ft.shape[1]
-        assert F == L // 2 + 1
+            idx, K = self._select_indices(x_ft)
 
-        idx, K = self._select_indices(x_ft)
-
-        # gather selected: (B,K,H,Ein)
-        if idx.dim() == 1:
-            x_sel = x_ft.index_select(dim=1, index=idx)
-        else:
-            # Only possible if topk_per_head True for topk_* policies
-            idx_g = idx.transpose(0, 1).unsqueeze(0).unsqueeze(-1)  # (1,K,H,1)
-            idx_g = idx_g.expand(B, -1, -1, Ein)                    # (B,K,H,Ein)
-            if use_real:
-                idx_g = idx_g.unsqueeze(-1).expand(-1, -1, -1, -1, 2)  # (B,K,H,Ein,2)
-            x_sel = x_ft.gather(dim=1, index=idx_g)
-
-        if self.freq_norm_mode is not None:
-            scale = (lambda t: t.view(1, K, 1, 1, 1)) if use_real else (lambda t: t.view(1, K, 1, 1))
+            # gather selected: (B,K,H,Ein)
             if idx.dim() == 1:
-                fs = self._freq_scale(idx, dtype=x_sel.real.dtype)  # (K,)
-                x_sel = x_sel * scale(fs)
+                x_sel = x_ft.index_select(dim=1, index=idx)
             else:
-                fs_hk = self._freq_scale(idx[:, :K].reshape(-1), dtype=x_sel.real.dtype).view(H, K)
-                x_sel = x_sel * scale(fs_hk.transpose(0, 1))
+                # Only possible if topk_per_head True for topk_* policies
+                idx_g = idx.transpose(0, 1).unsqueeze(0).unsqueeze(-1)  # (1,K,H,1)
+                idx_g = idx_g.expand(B, -1, -1, Ein)                    # (B,K,H,Ein)
+                if use_real:
+                    idx_g = idx_g.unsqueeze(-1).expand(-1, -1, -1, -1, 2)  # (B,K,H,Ein,2)
+                x_sel = x_ft.gather(dim=1, index=idx_g)
 
-        out_ft = x_ft.new_zeros((B, F, H, self.Eout, 2)) if use_real else x_ft.new_zeros((B, F, H, self.Eout))
-        log_debug_fn(x_sel)
+            if self.freq_norm_mode is not None:
+                scale = (lambda t: t.view(1, K, 1, 1, 1)) if use_real else (lambda t: t.view(1, K, 1, 1))
+                if idx.dim() == 1:
+                    fs = self._freq_scale(idx, dtype=x_sel.real.dtype)  # (K,)
+                    x_sel = x_sel * scale(fs)
+                else:
+                    fs_hk = self._freq_scale(idx[:, :K].reshape(-1), dtype=x_sel.real.dtype).view(H, K)
+                    x_sel = x_sel * scale(fs_hk.transpose(0, 1))
 
-        if not self.lrfop:
-            # IMPORTANT FIX #1: weights has max_slots >= K
-            W = self.weights[:K] # (K,H,Ein,Eout)
-            assert W.shape[0] == x_sel.shape[1], f"{W.shape[0]} != {x_sel.shape[1]}, {self.index.shape[0]}, {K}, {x_ft.shape}"
+            out_ft = x_ft.new_zeros((B, F, H, self.Eout, 2)) if use_real else x_ft.new_zeros((B, F, H, self.Eout))
+            log_debug_fn(x_sel)
+
+            if not self.lrfop:
+                # IMPORTANT FIX #1: weights has max_slots >= K
+                W = self.weights[:K] # (K,H,Ein,Eout)
+                assert W.shape[0] == x_sel.shape[1], f"{W.shape[0]} != {x_sel.shape[1]}, {self.index.shape[0]}, {K}, {x_ft.shape}"
+                if use_real:
+                    out_sel = complex_einsum_bkhi_khio(x_sel, as_real(W))
+                else:
+                    out_sel = torch.einsum("bkhi,khio->bkho", x_sel, W)
+            else:
+                U = self.U0.unsqueeze(0).expand(K, -1, -1, -1)  # (K,H,Ein,r)
+                V = self.V0.unsqueeze(0).expand(K, -1, -1, -1)  # (K,H,Eout,r)
+                if use_real:
+                    out_sel = complex_einsum_lowrank(x_sel, as_real(U), as_real(V))
+                else:
+                    out_sel = torch.einsum("bkhi,khir,khor->bkho", x_sel, U, V)
+            log_debug_fn(out_sel)
+            if self.scatter_freq:
+                if idx.dim() == 1:
+                    out_ft.index_copy_(1, idx, out_sel)
+                else:
+                    for h in range(H):
+                        out_ft[:, idx[h], h, :] = out_sel[:, :, h, :]
+            else:
+                out_ft[:, :K] = out_sel
+
             if use_real:
-                out_sel = complex_einsum_bkhi_khio(x_sel, as_real(W))
+                y_ft = as_complex(out_ft.permute(0, 2, 3, 1, 4))
             else:
-                out_sel = torch.einsum("bkhi,khio->bkho", x_sel, W)
-        else:
-            U = self.U0.unsqueeze(0).expand(K, -1, -1, -1)  # (K,H,Ein,r)
-            V = self.V0.unsqueeze(0).expand(K, -1, -1, -1)  # (K,H,Eout,r)
-            if use_real:
-                out_sel = complex_einsum_lowrank(x_sel, as_real(U), as_real(V))
-            else:
-                out_sel = torch.einsum("bkhi,khir,khor->bkho", x_sel, U, V)
-        log_debug_fn(out_sel)
-        if self.scatter_freq:
-            if idx.dim() == 1:
-                out_ft.index_copy_(1, idx, out_sel)
-            else:
-                for h in range(H):
-                    out_ft[:, idx[h], h, :] = out_sel[:, :, h, :]
-        else:
-            out_ft[:, :K] = out_sel
+                y_ft = out_ft.permute(0, 2, 3, 1)
+            log_debug_fn(y_ft)
+            y = torch.fft.irfft(
+                y_ft, n=L, dim=-1, norm=self.fft_norm
+            ).permute(0, 3, 1, 2)
+            log_debug_fn(y)
 
-        if use_real:
-            y_ft = as_complex(out_ft.permute(0, 2, 3, 1, 4))
-        else:
-            y_ft = out_ft.permute(0, 2, 3, 1)
-        log_debug_fn(y_ft)
-        y = torch.fft.irfft(
-            y_ft, n=L, dim=-1, norm=self.fft_norm
-        ).permute(0, 3, 1, 2).to(x_in.dtype)
-        log_debug_fn(y)
-
+        y = y.to(x_in.dtype)
         return (y, None)
 
 
