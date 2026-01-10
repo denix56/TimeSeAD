@@ -41,7 +41,7 @@ class MovingAvg(nn.Module):
 
         # Efficient border padding instead of repeat+cat
         # pad = (pad_left, pad_right) for last dim (L)
-        x = torch._C._nn.pad(x, (self.padding, self.padding), mode="replicate")
+        x = F.pad(x, (self.padding, self.padding), mode="replicate")
 
         # Average pooling along time dimension
         x = self.avg(x)  # (B, C, L_out)
