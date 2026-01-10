@@ -17,6 +17,8 @@ torch.set_printoptions(
 def log_debug(tensor: torch.Tensor, debug: bool):
     if debug and not torch.isfinite(tensor).all():
         logger.debug("%s", tensor, stacklevel=2)
+        return False
+    return True
 
 
 class CustomLayerNorm(nn.Module):
@@ -31,7 +33,11 @@ class CustomLayerNorm(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         with torch.autocast(device_type=x.device.type, enabled=False):
             x_hat = self.layernorm(x.float()).to(x.dtype)
-        log_debug(x_hat, debug=True)
+        if not log_debug(x_hat, debug=True):
+            st = {'x': x, 'x_hat': x_hat, 'ln': self.layernorm.state_dict()}
+            from pathlib import Path
+            Path('/raid/work/senkin/noboom/debug').mkdir(parents=True, exist_ok=True)
+            torch.save(st, '/raid/work/senkin/noboom/debug/ln.pt')
         bias = torch.mean(x_hat, dim=1, keepdim=True)
         log_debug(bias, debug=True)
         return x_hat - bias
