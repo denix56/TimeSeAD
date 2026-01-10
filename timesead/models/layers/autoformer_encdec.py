@@ -29,8 +29,10 @@ class CustomLayerNorm(nn.Module):
         self.layernorm = nn.LayerNorm(channels)
 
     def forward(self, x):
-        x_hat = self.layernorm(x)
-        bias = torch.mean(x_hat, dim=1, keepdim=True).expand(-1, x.shape[1], -1)
+        x_hat = self.layernorm(x.float()).to(x.dtype)
+        log_debug(x_hat, debug=True)
+        bias = torch.mean(x_hat, dim=1, keepdim=True)
+        log_debug(bias, debug=True)
         return x_hat - bias
 
 
@@ -142,6 +144,7 @@ class Encoder(nn.Module):
                 log_debug(x, debug=True)
                 attns.append(attn)
             x, attn = self.attn_layers[-1](x)
+            log_debug(x, debug=True)
             attns.append(attn)
         else:
             for attn_layer in self.attn_layers:
