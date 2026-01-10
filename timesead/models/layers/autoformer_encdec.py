@@ -14,8 +14,7 @@ class CustomLayerNorm(nn.Module):
         self.layernorm = nn.LayerNorm(channels)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        with torch.autocast(device_type=x.device.type, enabled=False):
-            x_hat = self.layernorm(x.float()).to(x.dtype)
+        x_hat = self.layernorm(x)
         bias = torch.mean(x_hat, dim=1, keepdim=True)
         return x_hat - bias
 
