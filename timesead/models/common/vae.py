@@ -18,7 +18,7 @@ def sample_normal(mu: torch.Tensor, std_or_log_var: torch.Tensor, log_var: bool 
     if num_samples == 1:
         eps = torch.randn_like(mu)  # also copies device from mu
     else:
-        eps = torch.rand((num_samples,) + mu.shape, dtype=mu.dtype, device=mu.device)
+        eps = torch.randn((num_samples,) + mu.shape, dtype=mu.dtype, device=mu.device)
         mu = mu.unsqueeze(0)
         sigma = sigma.unsqueeze(0)
     # z = μ + σ * ϵ, with ϵ ~ N(0,I)
