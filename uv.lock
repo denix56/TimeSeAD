@@ -1959,6 +1959,9 @@ experiments = [
     { name = "pymongo" },
     { name = "sacred" },
 ]
+extensions = [
+    { name = "timesead-extensions" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1976,12 +1979,21 @@ requires-dist = [
     { name = "sphinx", marker = "extra == 'docs'", specifier = ">=6.1" },
     { name = "sphinx-autoapi", marker = "extra == 'docs'", specifier = ">=2.1" },
     { name = "sphinx-rtd-theme", marker = "extra == 'docs'" },
+    { name = "timesead-extensions", marker = "extra == 'extensions'", git = "https://github.com/denix56/TimeSeAD-extensions.git" },
     { name = "torch", specifier = ">=2.6" },
     { name = "torch-geometric" },
     { name = "torchvision", specifier = ">=0.2.2" },
     { name = "tqdm", specifier = ">=4.59" },
 ]
-provides-extras = ["experiments", "docs"]
+provides-extras = ["extensions", "experiments", "docs"]
+
+[[package]]
+name = "timesead-extensions"
+version = "0.1.0"
+source = { git = "https://github.com/denix56/TimeSeAD-extensions.git#3a357f84625ad42d84fbc573313a20a42aea41f5" }
+dependencies = [
+    { name = "torch" },
+]
 
 [[package]]
 name = "torch"
