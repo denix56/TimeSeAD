@@ -4,7 +4,6 @@ import math
 from typing import Sequence, Tuple
 
 import torch
-from scipy import stats
 from torch import nn as nn
 from torch.nn import Linear, Parameter, functional as F
 from torch_geometric.nn import MessagePassing, knn_graph
@@ -333,11 +332,10 @@ class GDN(BaseModel):
 
 
 class GDNAnomalyDetector(PredictionAnomalyDetector):
-    def __init__(self, model: GDN, epsilon: float = 1e-7):
+    def __init__(self, model: GDN):
         super(GDNAnomalyDetector, self).__init__()
 
         self.model = model
-        self.epsilon = epsilon
 
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         # x: (B, T, D), x_target (B, 1, D)
@@ -377,11 +375,10 @@ class GDNAnomalyDetector(PredictionAnomalyDetector):
 
         errors = torch.cat(errors, dim=0)
         median, _ = torch.median(errors, dim=0)
-        np_errors = errors.cpu().numpy()
-        iqr = stats.iqr(np_errors, axis=0)
-        iqr = torch.from_numpy(iqr).to(self.dummy.device)
-        iqr += self.epsilon
-        torch.reciprocal(iqr, out=iqr)
+        q1 = errors.quantile(0.25, dim=0)
+        q3 = errors.quantile(0.75, dim=0)
+        iqr = (q3 - q1).clamp_min(0)
+        iqr = (iqr + torch.finfo(iqr.dtype).eps).reciprocal_()
 
         self.register_buffer('median', median)
         self.register_buffer('inv_iqr', iqr)
