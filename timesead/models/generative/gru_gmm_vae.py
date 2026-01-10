@@ -115,7 +115,6 @@ class GMMVAELoss(VAELoss):
             (actual_x.unsqueeze(-2),)
         )
         normal_losses = normal_losses.float()
-        # Compute expectation with higher precision to keep gradients finite
         loss = -cat_entropy + (cat_probs * normal_losses).sum() / (T * B)
 
         return loss
