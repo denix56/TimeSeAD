@@ -4,17 +4,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class CustomLayerNorm(nn.Module):
+class CustomLayerNorm(nn.LayerNorm):
     """
     Special designed layernorm for the seasonal part
     """
 
-    def __init__(self, channels):
-        super(CustomLayerNorm, self).__init__()
-        self.layernorm = nn.LayerNorm(channels)
+    def __init__(self, channels: int):
+        super(CustomLayerNorm, self).__init__(normalized_shape=channels)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_hat = self.layernorm(x)
+        x_hat = super().forward(x)
         bias = torch.mean(x_hat, dim=1, keepdim=True)
         return x_hat - bias
 
