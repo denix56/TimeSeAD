@@ -20,19 +20,6 @@ from ...utils.complex_ops import (
 )
 
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-torch.set_printoptions(
-    threshold=float('inf'),  # print all elements
-    linewidth=200,           # avoid line wrapping
-)
-
-def log_debug(tensor: torch.Tensor, debug: bool):
-    if debug and (not torch.isfinite(tensor).all() or torch.abs(tensor).max().detach().cpu().item() >= 1e+3):
-        logger.debug("%s", tensor, stacklevel=2)
-
-
 def get_frequency_modes(seq_len, modes=64, mode_select_method="random"):
     modes = min(int(modes), seq_len // 2)
     if modes <= 0:
@@ -273,13 +260,8 @@ class FourierBlock(nn.Module):
         x_in = q
         with torch.autocast(device_type=q.device.type, enabled=False):
             x = q.float()
-            log_debug_fn = lambda x: log_debug(x, self.debug)
-
-            log_debug_fn(x)
 
             x_ft_c = torch.fft.rfft(x, dim=1, norm=self.fft_norm)  # (B,F,H,Ein)
-
-            log_debug_fn(x_ft_c)
 
             use_real = not is_compile_mode()
             x_ft = as_real(x_ft_c) if use_real else x_ft_c
@@ -309,7 +291,6 @@ class FourierBlock(nn.Module):
                     x_sel = x_sel * scale(fs_hk.transpose(0, 1))
 
             out_ft = x_ft.new_zeros((B, F, H, self.Eout, 2)) if use_real else x_ft.new_zeros((B, F, H, self.Eout))
-            log_debug_fn(x_sel)
 
             if not self.lrfop:
                 # IMPORTANT FIX #1: weights has max_slots >= K
@@ -326,7 +307,6 @@ class FourierBlock(nn.Module):
                     out_sel = complex_einsum_lowrank(x_sel, as_real(U), as_real(V))
                 else:
                     out_sel = torch.einsum("bkhi,khir,khor->bkho", x_sel, U, V)
-            log_debug_fn(out_sel)
             if self.scatter_freq:
                 if idx.dim() == 1:
                     out_ft.index_copy_(1, idx, out_sel)
@@ -340,11 +320,9 @@ class FourierBlock(nn.Module):
                 y_ft = as_complex(out_ft.permute(0, 2, 3, 1, 4))
             else:
                 y_ft = out_ft.permute(0, 2, 3, 1)
-            log_debug_fn(y_ft)
             y = torch.fft.irfft(
                 y_ft, n=L, dim=-1, norm=self.fft_norm
             ).permute(0, 3, 1, 2)
-            log_debug_fn(y)
         y = y.to(x_in.dtype)
         return (y, None)
 
