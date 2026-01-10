@@ -20,7 +20,7 @@ torch.set_printoptions(
 )
 
 def log_debug(tensor: torch.Tensor, debug: bool):
-    if debug and not torch.isfinite(tensor).all():
+    if debug and (not torch.isfinite(tensor).all() or tensor.max().detach().cpu().item() >= 1e+9):
         logger.debug("%s", tensor, stacklevel=2)
 
 
