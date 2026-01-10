@@ -257,10 +257,8 @@ class FourierBlock(nn.Module):
         assert Ein == self.Ein
         assert L == self.seq_len
 
-        x_in = q
         with torch.autocast(device_type=q.device.type, enabled=False):
             x = q.float()
-
             x_ft_c = torch.fft.rfft(x, dim=1, norm=self.fft_norm)  # (B,F,H,Ein)
 
             use_real = is_compile_mode()
@@ -323,7 +321,7 @@ class FourierBlock(nn.Module):
             y = torch.fft.irfft(
                 y_ft, n=L, dim=-1, norm=self.fft_norm
             ).permute(0, 3, 1, 2)
-        y = y.to(x_in.dtype)
+        y = y.to(q.dtype)
         return (y, None)
 
 
