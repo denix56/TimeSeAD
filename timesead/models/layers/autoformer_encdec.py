@@ -36,8 +36,9 @@ class CustomLayerNorm(nn.Module):
         if not log_debug(x_hat, debug=True):
             st = {'x': x, 'x_hat': x_hat, 'ln': self.layernorm.state_dict()}
             from pathlib import Path
+            from uuid import uuid4
             Path('/raid/work/senkin/noboom/debug').mkdir(parents=True, exist_ok=True)
-            torch.save(st, '/raid/work/senkin/noboom/debug/ln.pt')
+            torch.save(st, f'/raid/work/senkin/noboom/debug/ln_{uuid4()}.pt')
         bias = torch.mean(x_hat, dim=1, keepdim=True)
         log_debug(bias, debug=True)
         return x_hat - bias
