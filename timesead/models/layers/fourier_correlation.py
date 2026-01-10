@@ -263,7 +263,7 @@ class FourierBlock(nn.Module):
 
             x_ft_c = torch.fft.rfft(x, dim=1, norm=self.fft_norm)  # (B,F,H,Ein)
 
-            use_real = not is_compile_mode()
+            use_real = is_compile_mode()
             x_ft = as_real(x_ft_c) if use_real else x_ft_c
             F = x_ft.shape[1]
             assert F == L // 2 + 1
