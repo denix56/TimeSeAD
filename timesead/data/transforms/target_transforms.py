@@ -149,3 +149,29 @@ class OverlapPredictionTargetTransform(Transform):
             return parent_seq_len - self.offset
 
         return [slen - self.offset for slen in parent_seq_len]
+
+
+class WindowLabelFilterTransform(Transform):
+    """
+    Filters windows based on their label values.
+
+    By default, only windows whose labels are entirely normal (all zeros) are kept.
+    """
+    def __init__(self, parent: Transform, label_index: int = 0, normal_value: int = 0, keep_normal: bool = True):
+        super().__init__(parent)
+        self.label_index = label_index
+        self.normal_value = normal_value
+        self.keep_normal = keep_normal
+        self.indices = []
+        for idx in range(len(parent)):
+            _, targets = parent.get_datapoint(idx)
+            labels = targets[label_index]
+            is_normal = torch.all(labels == normal_value).item()
+            if is_normal == keep_normal:
+                self.indices.append(idx)
+
+    def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
+        return self.parent.get_datapoint(self.indices[item])
+
+    def __len__(self) -> Optional[int]:
+        return len(self.indices)

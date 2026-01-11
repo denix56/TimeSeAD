@@ -22,6 +22,12 @@ The paper can be found [here](https://openreview.net/forum?id=iMmsCI0JsS).
 
 For installation and usage guides please refer to the [documentation](https://timesead.readthedocs.io/en/latest).
 
+## Third-party models
+
+TimeSeAD includes the NeuTraL-AD (Neural Transformation Learning for Anomaly Detection) implementation, which is
+licensed under the AGPL-3.0 license by Robert Bosch GmbH. See `timesead/models/other/neutral_ad.py` for the license
+header and make sure the AGPL requirements are compatible with your intended use.
+
 ## Citation and Contact
 
 If you use our work, please consider citing the paper
