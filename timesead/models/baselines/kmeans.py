@@ -21,6 +21,7 @@ class KMeansAD(AnomalyDetector):
         self.batch_size = batch_size
         self.model = MiniBatchKMeans(n_clusters=k, batch_size=self.batch_size)
         self.input_shape = input_shape
+        self.window_size = None
 
 
     def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
@@ -31,6 +32,13 @@ class KMeansAD(AnomalyDetector):
             data = data.reshape(batch_size, window_size*n_features)
             self.model.partial_fit(data)
 
+    def partial_fit(self, inputs: Tuple[torch.Tensor, ...], **kwargs) -> None:
+        data = inputs[0]
+        batch_size, window_size, n_features = data.shape
+        assert self.window_size is None or self.window_size == window_size, "Window size must be same across calls."
+        self.window_size = window_size
+        data = data.reshape(batch_size, window_size * n_features)
+        self.model.partial_fit(data)
 
     def compute_online_anomaly_score(
         self, inputs: Tuple[torch.Tensor, ...]

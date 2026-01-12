@@ -46,6 +46,15 @@ class AnomalyDetector(torch.nn.Module, abc.ABC):
         """
         raise NotImplementedError
 
+    def partial_fit(self, inputs: Tuple[torch.Tensor, ...], **kwargs) -> None:
+        """
+        Oncrementally update this anomaly detector by fitting on a given batch. Note that we assume only normal data here.
+
+        :param inputs: tuple of input tensors
+        :param kwargs: additional arguments
+        """
+        raise NotImplementedError
+
     @abc.abstractmethod
     def format_online_targets(self, targets: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         """
