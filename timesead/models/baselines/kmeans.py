@@ -1,6 +1,7 @@
 from typing import Tuple
 import torch
 from sklearn.cluster import MiniBatchKMeans
+from tqdm import tqdm
 
 from ..common import AnomalyDetector
 
@@ -25,7 +26,7 @@ class KMeansAD(AnomalyDetector):
 
 
     def fit(self, dataset: torch.utils.data.DataLoader, **kwargs) -> None:
-        for (b_inputs, b_targets) in dataset:
+        for (b_inputs, b_targets) in tqdm(dataset, desc="KMeans fit", leave=False):
             data = b_inputs[0]
             batch_size, window_size, n_features = data.shape
             self.window_size = window_size
