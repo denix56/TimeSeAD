@@ -10,7 +10,7 @@ from .general_transforms import (
     TranslateXTransform,
 )
 from .target_transforms import ReconstructionTargetTransform, OneVsRestTargetTransform, PredictionTargetTransform, \
-    OverlapPredictionTargetTransform
+    OverlapPredictionTargetTransform, WindowLabelFilterTransform
 from .window_transform import WindowTransform
 
 from .dataset_source import DatasetSource, make_dataset_split
