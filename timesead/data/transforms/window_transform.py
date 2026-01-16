@@ -3,7 +3,6 @@ from typing import Tuple, Union, List, Optional
 import numpy as np
 import torch
 
-from . import DatasetSource
 from .transform_base import Transform
 from ...utils.utils import ceil_div
 
