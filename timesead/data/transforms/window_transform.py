@@ -85,7 +85,6 @@ class WindowTransform(Transform):
 
 class WindowTransformIfNotWindow(WindowTransform):
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
-        print(self.parent.ndim, item)
         if self.parent.ndim == 2:
             return super()._get_datapoint_impl(item)
         else:
