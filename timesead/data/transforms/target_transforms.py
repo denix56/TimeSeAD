@@ -3,7 +3,7 @@ from typing import Tuple, Optional, List, Any, Union
 import torch
 
 from .transform_base import Transform
-from .window_transform import WindowTransform
+from .window_transform import WindowTransformIfNotWindow
 
 
 class ReconstructionTargetTransform(Transform):
@@ -76,7 +76,7 @@ class OneVsRestTargetTransform(Transform):
         return inputs, targets + new_targets
 
 
-class PredictionTargetTransform(WindowTransform):
+class PredictionTargetTransform(WindowTransformIfNotWindow):
     """
     Adds the last `prediction_window` points from the current inputs as targets for prediction objectives.
     """
@@ -110,7 +110,10 @@ class PredictionTargetTransform(WindowTransform):
 
     @property
     def seq_len(self) -> Union[int, List[int]]:
-        return self.input_window_size
+        if self.parent.ndim == 2:
+            return self.input_window_size
+        else:
+            return self.parent.window_size
 
 
 class OverlapPredictionTargetTransform(Transform):

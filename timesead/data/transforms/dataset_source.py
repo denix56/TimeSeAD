@@ -92,16 +92,20 @@ class DatasetSource(Transform):
         return len(self.dataset) if self.axis == 'time' else (self.end - self.start)
 
     @property
-    def seq_len(self):
+    def seq_len(self) -> Union[int, List[int]]:
         return self.dataset.seq_len if self.axis == 'batch' else [(end - start) for start, end in zip(self.start, self.end)]
 
     @property
-    def num_features(self):
+    def num_features(self) -> int:
         return self.dataset.num_features
 
     @property
-    def ndim(self):
+    def ndim(self) -> int:
         return self.dataset.ndim
+
+    @property
+    def window_size(self) -> int:
+        return self.dataset.window_size
 
 
 def make_dataset_split(dataset: BaseTSDataset, *splits: float, axis: str = 'batch'):

@@ -43,6 +43,10 @@ class BaseTSDataset(abc.ABC, Dataset):
     def ndim(self) -> int:
         return 2
 
+    @property
+    def window_size(self) -> Optional[int]:
+        return None
+
     @staticmethod
     @abc.abstractmethod
     def get_default_pipeline() -> Dict[str, Dict[str, Any]]:

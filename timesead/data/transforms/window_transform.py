@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Union, List, Optional
 
 import numpy as np
 import torch
@@ -100,3 +100,15 @@ class WindowTransformIfNotWindow(WindowTransform):
                 seq_len = [seq_len]
             seq_len = sum(seq_len)
             return seq_len
+
+    def seq_len(self) -> Union[int, List[int]]:
+        if self.parent.ndim == 2:
+            return super().seq_len
+        else:
+            return self.parent.window_size
+
+    def ndim(self) -> int:
+        return 2
+
+    def window_size(self) -> Optional[int]:
+        return None

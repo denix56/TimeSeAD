@@ -63,5 +63,10 @@ class Transform(abc.ABC):
         return self.parent.num_features if self.parent is not None else None
 
     @property
-    def ndim(self) -> int:
+    def ndim(self) -> Optional[int]:
         return self.parent.ndim if self.parent is not None else None
+
+    @property
+    def window_size(self) -> Optional[int]:
+        return self.parent.window_size if self.parent is not None else None
+
