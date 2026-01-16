@@ -76,6 +76,7 @@ class WindowTransform(Transform):
     def seq_len(self):
         return self._window_size
 
+    @property
     def window_size(self) -> Optional[int]:
         return None
 
@@ -108,14 +109,17 @@ class WindowTransformIfNotWindow(WindowTransform):
             seq_len = sum(seq_len)
             return seq_len
 
+    @property
     def seq_len(self) -> Union[int, List[int]]:
         if self.parent.ndim == 2:
             return super().seq_len
         else:
             return self.parent.window_size
 
+    @property
     def ndim(self) -> int:
         return 2
 
+    @property
     def window_size(self) -> Optional[int]:
         return None
