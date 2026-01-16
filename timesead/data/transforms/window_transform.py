@@ -62,6 +62,8 @@ class WindowTransform(Transform):
         out_inputs = tuple(inp[start:end] for inp in inputs)
         out_targets = tuple(t[start:end] for t in targets)
 
+        print([o.shape for o in out_inputs], [o.shape for o in out_targets])
+
         return out_inputs, out_targets
 
     def __len__(self):
@@ -83,6 +85,7 @@ class WindowTransform(Transform):
 
 class WindowTransformIfNotWindow(WindowTransform):
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
+        print(self.parent.ndim, item)
         if self.parent.ndim == 2:
             return super()._get_datapoint_impl(item)
         else:
