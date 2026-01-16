@@ -88,7 +88,10 @@ class WindowTransformIfNotWindow(WindowTransform):
             seq_len = np.asarray(seq_len)
             idx = int(np.searchsorted(np.cumsum(seq_len), item, side='right'))
             item_idx = item - seq_len[idx - 1] if idx > 0 else item
-            return self.parent.get_datapoint(idx)[item_idx]
+            inputs, targets = self.parent.get_datapoint(item_idx)
+            inputs = tuple(inp[item_idx] for inp in inputs)
+            targets = tuple(tgt[item_idx] for tgt in targets)
+            return inputs, targets
 
     def __len__(self):
         if self.parent.ndim == 2:
