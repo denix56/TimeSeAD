@@ -1,7 +1,9 @@
 from typing import Tuple
 
+import numpy as np
 import torch
 
+from . import DatasetSource
 from .transform_base import Transform
 from ...utils.utils import ceil_div
 
@@ -27,7 +29,7 @@ class WindowTransform(Transform):
         self.step_size = step_size
         self.reverse = reverse
 
-    def inverse_transform_index(self, item) -> Tuple[int, int]:
+    def _inverse_transform_index(self, item) -> Tuple[int, int]:
         seq_len = self.parent.seq_len
 
         ts_index = window_start = 0
@@ -54,7 +56,7 @@ class WindowTransform(Transform):
         return ts_index, window_start
 
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
-        old_i, start = self.inverse_transform_index(item)
+        old_i, start = self._inverse_transform_index(item)
         end = start + self.window_size
         inputs, targets = self.parent.get_datapoint(old_i)
 
@@ -74,3 +76,27 @@ class WindowTransform(Transform):
     @property
     def seq_len(self):
         return self.window_size
+
+
+class WindowTransformIfNotWindow(WindowTransform):
+    def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
+        if self.parent.ndim == 2:
+            return super()._get_datapoint_impl(item)
+        else:
+            seq_len = self.parent.seq_len
+            if isinstance(seq_len, int):
+                seq_len = [seq_len]
+            seq_len = np.asarray(seq_len)
+            idx = int(np.searchsorted(np.cumsum(seq_len), item, side='right'))
+            item_idx = item - seq_len[idx - 1] if idx > 0 else item
+            return self.parent.get_datapoint(idx)[item_idx]
+
+    def __len__(self):
+        if self.parent.ndim == 2:
+            return super().__len__()
+        else:
+            seq_len = self.parent.seq_len
+            if isinstance(seq_len, int):
+                seq_len = [seq_len]
+            seq_len = sum(seq_len)
+            return seq_len

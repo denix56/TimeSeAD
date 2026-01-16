@@ -61,3 +61,7 @@ class Transform(abc.ABC):
         Number of features of each datapoint. This can also be a tuple if the data has more than one feature dimension.
         """
         return self.parent.num_features if self.parent is not None else None
+
+    @property
+    def ndim(self) -> int:
+        return self.parent.ndim if self.parent is not None else None

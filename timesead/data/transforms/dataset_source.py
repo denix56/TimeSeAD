@@ -99,6 +99,10 @@ class DatasetSource(Transform):
     def num_features(self):
         return self.dataset.num_features
 
+    @property
+    def ndim(self):
+        return self.dataset.ndim
+
 
 def make_dataset_split(dataset: BaseTSDataset, *splits: float, axis: str = 'batch'):
     r"""

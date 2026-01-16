@@ -39,6 +39,10 @@ class BaseTSDataset(abc.ABC, Dataset):
         """
         raise NotImplementedError
 
+    @property
+    def ndim(self) -> int:
+        return 2
+
     @staticmethod
     @abc.abstractmethod
     def get_default_pipeline() -> Dict[str, Dict[str, Any]]:
