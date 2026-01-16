@@ -24,7 +24,7 @@ class WindowTransform(Transform):
             sequence.
         """
         super(WindowTransform, self).__init__(parent)
-        self.window_size = window_size
+        self._window_size = window_size
         self.step_size = step_size
         self.reverse = reverse
 
@@ -34,14 +34,14 @@ class WindowTransform(Transform):
         ts_index = window_start = 0
         if isinstance(seq_len, int):
             # Every sequence has the same length
-            windows_per_seq = ceil_div(max((seq_len - self.window_size + 1), 0), self.step_size)
+            windows_per_seq = ceil_div(max((seq_len - self._window_size + 1), 0), self.step_size)
             ts_index, window_start = divmod(item, windows_per_seq)
             window_start *= self.step_size
         else:
             # Sequences have different length
             total_windows = old_total_windows = 0
             for i, seq_l in enumerate(seq_len):
-                windows_per_seq = ceil_div(max((seq_l - self.window_size + 1), 0), self.step_size)
+                windows_per_seq = ceil_div(max((seq_l - self._window_size + 1), 0), self.step_size)
                 old_total_windows = total_windows
                 total_windows += windows_per_seq
                 if total_windows > item:
@@ -50,13 +50,13 @@ class WindowTransform(Transform):
                     break
 
         if self.reverse:
-            window_start = seq_len - window_start - self.window_size
+            window_start = seq_len - window_start - self._window_size
 
         return ts_index, window_start
 
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
         old_i, start = self._inverse_transform_index(item)
-        end = start + self.window_size
+        end = start + self._window_size
         inputs, targets = self.parent.get_datapoint(old_i)
 
         out_inputs = tuple(inp[start:end] for inp in inputs)
@@ -68,13 +68,16 @@ class WindowTransform(Transform):
         old_n = len(self.parent)
         old_ts = self.parent.seq_len
         if isinstance(old_ts, int):
-            return old_n * ceil_div(max((old_ts - self.window_size + 1), 0), self.step_size)
+            return old_n * ceil_div(max((old_ts - self._window_size + 1), 0), self.step_size)
 
-        return sum(ceil_div(max((old_t - self.window_size + 1), 0), self.step_size) for old_t in old_ts)
+        return sum(ceil_div(max((old_t - self._window_size + 1), 0), self.step_size) for old_t in old_ts)
 
     @property
     def seq_len(self):
-        return self.window_size
+        return self._window_size
+
+    def window_size(self) -> Optional[int]:
+        return None
 
 
 class WindowTransformIfNotWindow(WindowTransform):
