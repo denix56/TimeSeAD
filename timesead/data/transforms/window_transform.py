@@ -62,7 +62,7 @@ class WindowTransform(Transform):
         out_inputs = tuple(inp[start:end] for inp in inputs)
         out_targets = tuple(t[start:end] for t in targets)
 
-        print([o.shape for o in out_inputs], [o.shape for o in out_targets])
+        print("Window Trasform", [o.shape for o in out_inputs], [o.shape for o in out_targets])
 
         return out_inputs, out_targets
 
