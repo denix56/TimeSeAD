@@ -134,12 +134,18 @@ def build_fc_edge_index(num_nodes: int) -> torch.Tensor:
 
 def get_batch_edge_index(org_edge_index, batch_num, node_num):
     # org_edge_index:(2, edge_num)
-    edge_index = org_edge_index.clone().detach()
-    edge_num = org_edge_index.shape[1]
-    batch_edge_index = edge_index.repeat(1, batch_num).contiguous()
+    edge_index = org_edge_index.detach().clone()
+    batch_edge_index = edge_index.repeat(1, batch_num)
 
-    for i in range(batch_num):
-        batch_edge_index[:, i * edge_num:(i + 1) * edge_num] += i * node_num
+    # offsets: [B], applied to each block of E edges
+    offsets = (torch.arange(batch_num, device=edge_index.device, dtype=batch_edge_index.dtype) * node_num)
+
+    # view as [2, B, E] so we can add offsets as [1, B, 1], then flatten back
+    batch_edge_index = (
+        batch_edge_index.view(2, batch_num, -1)
+        .add_(offsets.view(1, batch_num, 1))
+        .view(2, -1)
+    )
 
     return batch_edge_index.long()
 
@@ -237,7 +243,8 @@ class GDN(BaseModel):
         """
         super(GDN, self).__init__()
 
-        self.edge_index_sets = [build_fc_edge_index(node_num)]
+        edge_index_sets = torch.nested.nested_tensor([build_fc_edge_index(node_num)])
+        self.register_buffer('edge_index_sets', edge_index_sets)
 
         embed_dim = dim
         self.embedding = nn.Embedding(node_num, embed_dim)
@@ -290,16 +297,16 @@ class GDN(BaseModel):
 
         gcn_outs = []
         for i, edge_index in enumerate(edge_index_sets):
-            edge_num = edge_index.shape[1]
-            cache_edge_index = self.cache_edge_index_sets[i]
-
-            if cache_edge_index is None or cache_edge_index.shape[1] != edge_num * batch_num:
-                self.cache_edge_index_sets[i] = get_batch_edge_index(edge_index, batch_num, node_num).to(device)
-
-            batch_edge_index = self.cache_edge_index_sets[i]
+            # edge_num = edge_index.shape[1]
+            # cache_edge_index = self.cache_edge_index_sets[i]
+            #
+            # if cache_edge_index is None or cache_edge_index.shape[1] != edge_num * batch_num:
+            #     self.cache_edge_index_sets[i] = get_batch_edge_index(edge_index, batch_num, node_num).to(device)
+            #
+            # batch_edge_index = self.cache_edge_index_sets[i]
             repeated_embeddings = all_embeddings.repeat(batch_num, 1)
 
-            batch_gated_edge_index = get_batch_edge_index(gated_edge_index, batch_num, node_num).to(device)
+            batch_gated_edge_index = get_batch_edge_index(gated_edge_index, batch_num, node_num)
             gcn_out = self.gnn_layers[i](x, batch_gated_edge_index, node_num=node_num * batch_num,
                                          embedding=repeated_embeddings)
 
