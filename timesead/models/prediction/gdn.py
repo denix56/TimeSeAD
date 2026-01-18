@@ -243,7 +243,7 @@ class GDN(BaseModel):
         """
         super(GDN, self).__init__()
 
-        edge_index_sets = torch.nested.nested_tensor([build_fc_edge_index(node_num)], layout=torch.jagged)
+        edge_index_sets = build_fc_edge_index(node_num).unsqueeze(0)
         self.register_buffer('edge_index_sets', edge_index_sets)
 
         embed_dim = dim
