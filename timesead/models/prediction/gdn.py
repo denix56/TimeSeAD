@@ -279,20 +279,12 @@ class GDN(BaseModel):
         weights_arr = all_embeddings.detach()
 
         deterministic_mode = torch.are_deterministic_algorithms_enabled()
-        use_fallback = weights_arr.device.type == 'cpu' or deterministic_mode
-
-        if not use_fallback:
-            try:
-                gated_edge_index = knn_graph(weights_arr, self.topk, cosine=True)
-            except RuntimeError as err:
-                # CUDA KNN graph kernel is not deterministic; fall back when requested.
-                if 'deterministic' in str(err).lower():
-                    use_fallback = True
-                else:
-                    raise
+        use_fallback = deterministic_mode
 
         if use_fallback:
             gated_edge_index = fallback_knn_graph(weights_arr, self.topk)
+        else:
+            gated_edge_index = knn_graph(weights_arr, self.topk, cosine=True)
 
         self.learned_graph = gated_edge_index[0].view(-1, self.topk)
 
