@@ -336,8 +336,8 @@ class GDNAnomalyDetector(PredictionAnomalyDetector):
 
         self.model = model
 
-        self.register_buffer('median', None)
-        self.register_buffer('inv_iqr', None)
+        self.register_buffer('median', torch.tensor(0.0))
+        self.register_buffer('inv_iqr', torch.tensor(0.0))
 
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         # x: (B, T, D), x_target (B, 1, D)
