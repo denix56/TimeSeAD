@@ -1,4 +1,4 @@
-from typing import Tuple, Union, List, Optional
+from typing import Tuple, Union, List, Optional, Iterable
 
 import numpy as np
 import torch
@@ -28,9 +28,13 @@ class WindowTransform(Transform):
         self.step_size = step_size
         self.reverse = reverse
 
-    def _inverse_transform_index(self, item) -> Tuple[int, int]:
-        seq_len = self.parent.seq_len
+    def _compute_windowed_len(self, old_n: int, old_ts: Union[int, Iterable[int]]) -> int:
+        if isinstance(old_ts, int):
+            return old_n * ceil_div(max((old_ts - self._window_size + 1), 0), self.step_size)
 
+        return sum(ceil_div(max((old_t - self._window_size + 1), 0), self.step_size) for old_t in old_ts)
+
+    def _inverse_transform_index(self, item, seq_len: Union[int, Iterable[int]]) -> Tuple[int, int]:
         ts_index = window_start = 0
         if isinstance(seq_len, int):
             # Every sequence has the same length
@@ -55,7 +59,7 @@ class WindowTransform(Transform):
         return ts_index, window_start
 
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
-        old_i, start = self._inverse_transform_index(item)
+        old_i, start = self._inverse_transform_index(item, self.parent.seq_len)
         end = start + self._window_size
         inputs, targets = self.parent.get_datapoint(old_i)
 
@@ -67,10 +71,7 @@ class WindowTransform(Transform):
     def __len__(self):
         old_n = len(self.parent)
         old_ts = self.parent.seq_len
-        if isinstance(old_ts, int):
-            return old_n * ceil_div(max((old_ts - self._window_size + 1), 0), self.step_size)
-
-        return sum(ceil_div(max((old_t - self._window_size + 1), 0), self.step_size) for old_t in old_ts)
+        return self._compute_windowed_len(old_n, old_ts)
 
     @property
     def seq_len(self):
@@ -86,17 +87,19 @@ class WindowTransformIfNotWindow(WindowTransform):
         if self.parent.ndim == 2:
             return super()._get_datapoint_impl(item)
         else:
+            old_i, start = self._inverse_transform_index(item, self.parent.window_size)
+            end = start + self._window_size
             seq_len = self.parent.seq_len
             if isinstance(seq_len, int):
                 seq_len = [seq_len]
             seq_len = np.asarray(seq_len)
             cum_seq_len = np.cumsum(seq_len)
-            idx = int(np.searchsorted(cum_seq_len, item, side='right'))
-            item_idx = (item - cum_seq_len[idx - 1]) if idx > 0 else item
+            idx = int(np.searchsorted(cum_seq_len, old_i, side='right'))
+            item_idx = (old_i - cum_seq_len[idx - 1]) if idx > 0 else old_i
 
             inputs, targets = self.parent.get_datapoint(idx)
-            inputs = tuple(inp[item_idx] for inp in inputs)
-            targets = tuple(tgt[item_idx] for tgt in targets)
+            inputs = tuple(inp[item_idx, start:end] for inp in inputs)
+            targets = tuple(tgt[item_idx, start:end] for tgt in targets)
             return inputs, targets
 
     def __len__(self):
@@ -105,16 +108,9 @@ class WindowTransformIfNotWindow(WindowTransform):
         else:
             seq_len = self.parent.seq_len
             if isinstance(seq_len, int):
-                seq_len = [seq_len]
-            seq_len = sum(seq_len)
-            return seq_len
-
-    @property
-    def seq_len(self) -> Union[int, List[int]]:
-        if self.parent.ndim == 2:
-            return super().seq_len
-        else:
-            return self.parent.window_size
+                seq_len = [seq_len]*len(self.parent)
+            length = sum(self._compute_windowed_len(sl, self.parent.window_size) for sl in seq_len)
+            return length
 
     @property
     def ndim(self) -> int:
