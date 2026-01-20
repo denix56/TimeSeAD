@@ -99,6 +99,7 @@ class WindowTransformIfNotWindow(WindowTransform):
 
             inputs, targets = self.parent.get_datapoint(idx)
             inputs = tuple(inp[item_idx, start:end] for inp in inputs)
+            print([t.shape for t in targets])
             targets = tuple(tgt[item_idx, start:end] for tgt in targets)
             return inputs, targets
 

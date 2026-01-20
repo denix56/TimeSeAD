@@ -85,6 +85,7 @@ class DatasetSource(Transform):
         inputs, targets = self.dataset[item]
         inputs = tuple(inp[self.start[item]:self.end[item]] for inp in inputs)
         targets = tuple(target[self.start[item]:self.end[item]] for target in targets)
+        print([t.shape for t in targets])
 
         return inputs, targets
 
