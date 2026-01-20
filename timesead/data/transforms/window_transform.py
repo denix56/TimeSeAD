@@ -99,7 +99,7 @@ class WindowTransformIfNotWindow(WindowTransform):
 
             inputs, targets = self.parent.get_datapoint(idx)
             inputs = tuple(inp[item_idx, start:end] for inp in inputs)
-            targets = tuple(tgt[item_idx, start:end] for tgt in targets)
+            targets = tuple(tgt[item_idx, start:end] if tgt.ndim > 1 else tgt[item_idx] for tgt in targets)
             return inputs, targets
 
     def __len__(self):
