@@ -204,9 +204,9 @@ class LSTMAEMirza2018(LSTMAE):
 class LSTMAEAnomalyDetector(AnomalyDetector):
     def __init__(self, model: LSTMAE):
         super(LSTMAEAnomalyDetector, self).__init__()
+        self.model = model
         self.register_buffer('mean', torch.zeros(1))
         self.register_buffer('precision', torch.zeros(1))
-        self.model = model
 
     def _compute_precision(self, centered_errors: torch.Tensor, total: int) -> torch.Tensor:
         """Build a positive-definite covariance estimate and its inverse.

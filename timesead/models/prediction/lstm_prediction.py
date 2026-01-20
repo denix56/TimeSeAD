@@ -86,8 +86,9 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
         :param model:
         """
         super(LSTMPredictionAnomalyDetector, self).__init__()
-
         self.model = model
+        self.register_buffer('mean', torch.zeros(1))
+        self.register_buffer('precision', torch.zeros(1))
 
     @staticmethod
     def _append_window_errors(error_buckets: List[List[torch.Tensor]], error: torch.Tensor, window_start: int) -> None:
@@ -197,8 +198,8 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
         precision = cov
         torch.cholesky_inverse(cholesky, out=precision)
 
-        self.register_buffer('mean', mean)
-        self.register_buffer('precision', precision)
+        self.mean = mean
+        self.precision = precision
 
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         pass
