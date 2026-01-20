@@ -79,14 +79,14 @@ class DatasetSource(Transform):
     def _get_datapoint_impl(self, item) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
         if self.axis == 'batch':
             index = self.start + item
+            print("SS:", [t.shape for t in self.dataset[index][1]])
             return self.dataset[index]
 
         # Slice in time dimension
         inputs, targets = self.dataset[item]
         inputs = tuple(inp[self.start[item]:self.end[item]] for inp in inputs)
         targets = tuple(target[self.start[item]:self.end[item]] for target in targets)
-        print([t.shape for t in targets])
-
+        print("S2:", [t.shape for t in targets])
         return inputs, targets
 
     def __len__(self):
