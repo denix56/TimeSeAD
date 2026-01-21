@@ -24,9 +24,9 @@ def FFT_for_Period(x: torch.Tensor, k: int = 2) -> Tuple[torch.Tensor, torch.Ten
         amplitudes = torch.abs(xf)
     frequency_amplitudes = amplitudes.mean(dim=(0, 1))
     # zero out the zero-frequency component
-    frequency_amplitudes[0] = 0
+    frequency_amplitudes[0] = -torch.inf
     top_list = torch.topk(frequency_amplitudes, k).indices
-    period = torch.div(x.shape[2], top_list, rounding_mode='floor')
+    period = torch.div(x.shape[2], top_list.clamp_min(1) , rounding_mode='floor')
     return period.to(torch.int64), amplitudes.mean(-2)[:, top_list]
 
 
@@ -53,14 +53,13 @@ class TimesBlock(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, T, N = x.size()
         x = x.mT.contiguous()
-        assert T == self.seq_len
+        assert T == self.seq_len, f"{T} != {self.seq_len}"
         periods, period_weight = FFT_for_Period(x, self.top_k)
 
         res = []
         for i in range(self.top_k):
             period = periods[i].item()
             assert period >= 0
-            assert period > 0
             assert period <= T, f"Period {period} > T"
             out = F.pad(x, (0, (-self.seq_len) % period))
             assert out.shape[-1] % period == 0
