@@ -61,7 +61,7 @@ class TimesBlock(nn.Module):
             period = periods[i].item()
             assert period >= 0
             assert period > 0
-            assert period <= T
+            assert period <= T, f"Period {period} > T"
             out = F.pad(x, (0, (-self.seq_len) % period))
             assert out.shape[-1] % period == 0
             out = out.unflatten(-1, (-1, period))
