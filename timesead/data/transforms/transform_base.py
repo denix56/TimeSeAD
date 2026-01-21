@@ -30,6 +30,9 @@ class Transform(abc.ABC):
 
         return self._get_datapoint_impl(item)
 
+    def __getitem__(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
+        return self.get_datapoint(item)
+
     @abc.abstractmethod
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
         """

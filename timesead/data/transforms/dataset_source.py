@@ -87,9 +87,6 @@ class DatasetSource(Transform):
         targets = tuple(target[self.start[item]:self.end[item]] for target in targets)
         return inputs, targets
 
-    def __getitem__(self, item) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
-        return self.get_datapoint(item)
-
     def __len__(self):
         return len(self.dataset) if self.axis == 'time' else (self.end - self.start)
 
