@@ -102,7 +102,6 @@ class TimesNet(BaseModel):
             print(f"top_k = {top_k}, window_size = {window_size}, reducing top_k to {window_size // 2 + 1}.")
             top_k = window_size // 2 + 1
 
-
         self.model = nn.ModuleList([nn.Sequential(TimesBlock(window_size, top_k, d_model, d_ff, num_kernels),
                                                   nn.LayerNorm(d_model),)
                                     for _ in range(e_layers)])
