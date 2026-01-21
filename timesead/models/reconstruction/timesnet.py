@@ -98,9 +98,10 @@ class TimesNet(BaseModel):
         super(TimesNet, self).__init__()
         # Rename to window_size
         self.seq_len = window_size
-        if top_k > window_size:
-            print(f"top_k = {top_k}, window_size = {window_size}, reducing top_k to {window_size // 2 + 1}.")
-            top_k = window_size // 2 + 1
+        max_allowed_top_k = window_size // 2 + 1
+        if top_k > max_allowed_top_k:
+            print(f"top_k = {top_k}, max allowed top_k = {max_allowed_top_k}, reducing top_k.")
+            top_k = max_allowed_top_k
 
         self.model = nn.ModuleList([nn.Sequential(TimesBlock(window_size, top_k, d_model, d_ff, num_kernels),
                                                   nn.LayerNorm(d_model),)
