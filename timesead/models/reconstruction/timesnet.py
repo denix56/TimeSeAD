@@ -53,16 +53,15 @@ class TimesBlock(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, T, N = x.size()
         x = x.mT.contiguous()
-        assert T == self.seq_len, f"{T} != {self.seq_len}"
+        torch._check(T == self.seq_len, f"{T} != {self.seq_len}")
         periods, period_weight = FFT_for_Period(x, self.top_k)
 
         res = []
         for i in range(self.top_k):
             period = periods[i].item()
-            assert period >= 0
-            assert period <= T, f"Period {period} > T"
+            torch._check_is_size(period, f"Period {period} should be [0, {T}]", max=T)
             out = F.pad(x, (0, (-self.seq_len) % period))
-            assert out.shape[-1] % period == 0
+            torch._check(out.shape[-1] % period == 0)
             out = out.unflatten(-1, (-1, period))
             # 2D conv: from 1d Variation to 2d Variation
             out = self.conv(out)
