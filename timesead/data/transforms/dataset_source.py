@@ -28,7 +28,7 @@ class DatasetSource(Transform):
     sequences from a given dataset.
     It can be constrained to return only a specific part of the data.
     """
-    def __init__(self, dataset: BaseTSDataset, start: Union[int, List[int]] = None,
+    def __init__(self, dataset: Union["BaseTSDataset", "DatasetSource"], start: Union[int, List[int]] = None,
                  end: Union[int, List[int]] = None, axis: str = 'batch'):
         """
 
