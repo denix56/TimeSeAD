@@ -42,7 +42,9 @@ class TimesBlock(nn.Module):
         super(TimesBlock, self).__init__()
         # TODO(AR): check if window_size is needed
         self.seq_len = window_size
-        self.top_k = top_k
+        if top_k > window_size:
+            print(f"top_k = {top_k}, window_size = {window_size}, reducing top_k to window_size.")
+        self.top_k = min(top_k, window_size)
         # parameter-efficient design
         self.conv = nn.Sequential(
             InceptionBlockV1(d_model, d_ff, num_kernels=num_kernels),
