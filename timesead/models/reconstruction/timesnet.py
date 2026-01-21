@@ -25,8 +25,8 @@ def FFT_for_Period(x: torch.Tensor, k: int = 2) -> Tuple[torch.Tensor, torch.Ten
     frequency_amplitudes = amplitudes.mean(dim=(0, 1))
     # zero out the zero-frequency component
     frequency_amplitudes[0] = -torch.inf
-    top_list = torch.topk(frequency_amplitudes, k).indices
-    period = torch.div(x.shape[2], top_list.clamp_min(1) , rounding_mode='floor')
+    top_list = torch.topk(frequency_amplitudes, k).indices.clamp_min(1)
+    period = torch.div(x.shape[2], top_list , rounding_mode='floor')
     return period.to(torch.int64), amplitudes.mean(-2)[:, top_list]
 
 
