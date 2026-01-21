@@ -26,7 +26,7 @@ class Transform(abc.ABC):
         :return: A datapoint of the form `(inputs, targets)`, where `inputs` and `targets` are tuples of tensors.
         """
         if not (0 <= item < len(self)):
-            raise IndexError
+            raise IndexError(f"Item {item} is out of range [0, {len(self)}]")
 
         return self._get_datapoint_impl(item)
 
