@@ -92,7 +92,14 @@ class DatasetSource(Transform):
 
     @property
     def seq_len(self) -> Union[int, List[int]]:
-        return self.dataset.seq_len if self.axis == 'batch' else [(end - start) for start, end in zip(self.start, self.end)]
+        if self.axis == 'time':
+            return [(end - start) for start, end in zip(self.start, self.end)]
+        else:
+            seq_len = self.dataset.seq_len
+            if isinstance(seq_len, int):
+                return seq_len
+            else:
+                return seq_len[self.start:self.end]
 
     @property
     def num_features(self) -> int:
