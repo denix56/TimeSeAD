@@ -286,7 +286,7 @@ class GDN(BaseModel):
         weights_arr = all_embeddings.detach()
 
         deterministic_mode = torch.are_deterministic_algorithms_enabled()
-        use_fallback = deterministic_mode
+        use_fallback = deterministic_mode or x.device.type != 'cuda'
 
         if use_fallback:
             gated_edge_index = fallback_knn_graph(weights_arr, self.topk)
