@@ -257,7 +257,8 @@ class FourierBlock(nn.Module):
         assert Ein == self.Ein
         assert L == self.seq_len
 
-        with torch.autocast(device_type=q.device.type, dtype=torch.float32, enabled=False):
+        with torch.autocast(device_type='cpu' if q.device.type == 'meta' else q.device.type,
+                            enabled=False):
             x = q.float()
             x_ft_c = torch.fft.rfft(x, dim=1, norm=self.fft_norm)  # (B,F,H,Ein)
 
