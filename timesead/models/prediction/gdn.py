@@ -14,6 +14,28 @@ from ..common import PredictionAnomalyDetector
 from ...models import BaseModel
 
 
+import torch
+from torch.library import Library, impl
+
+knn_lib = Library("knn_graph_lib", "DEF")
+knn_lib.define("knn_graph(Tensor x, int topk) -> Tensor")
+
+@torch.library.register_fake("knn_graph_lib::knn_graph")
+def knn_graph_fake(x, k: int):
+    out_shape = (2, x.shape[0] * k)  # example
+    return torch.empty(out_shape, device=x.device, dtype=torch.int64)
+
+@impl(knn_lib, "knn_graph", "CUDA")
+def knn_lib_cuda(x, k: int):
+    if torch.are_deterministic_algorithms_enabled():
+        return fallback_knn_graph(x, k)
+    return knn_graph(x, k, cosine=True)
+
+@impl(knn_lib, "knn_graph", "CPU")
+def knn_graph_cpu(x, k: int):
+    return fallback_knn_graph(x, k)
+
+
 class GraphLayer(MessagePassing):
     def __init__(self, in_channels, out_channels, heads=1, concat=True,
                  negative_slope=0.2, dropout=0, bias=True, inter_dim=-1, **kwargs):
@@ -285,14 +307,7 @@ class GDN(BaseModel):
         all_embeddings = self.embedding(node_indices)
         weights_arr = all_embeddings.detach()
 
-        deterministic_mode = torch.are_deterministic_algorithms_enabled()
-        use_fallback = deterministic_mode or x.device.type != 'cuda'
-
-        if use_fallback:
-            gated_edge_index = fallback_knn_graph(weights_arr, self.topk)
-        else:
-            gated_edge_index = knn_graph(weights_arr, self.topk, cosine=True)
-
+        gated_edge_index = torch.ops.knn_graph_lib.knn_graph(weights_arr, self.topk)
         self.learned_graph = gated_edge_index[0].view(-1, self.topk)
 
         gcn_outs = []
