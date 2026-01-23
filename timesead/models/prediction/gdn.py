@@ -14,30 +14,21 @@ from ..common import PredictionAnomalyDetector
 from ...models import BaseModel
 
 
-import torch
-from torch.library import Library, impl
+@torch.library.custom_op('knn_lib::knn_graph', mutates_args=())
+def knn_graph_cpu(x: torch.Tensor, k: int) -> torch.Tensor:
+    return fallback_knn_graph(x, k)
 
-knn_lib = Library("knn_graph_lib", "DEF")
-knn_lib.define("knn_graph(Tensor x, int topk) -> Tensor")
-
-@torch.library.register_fake("knn_graph_lib::knn_graph")
-def knn_graph_fake(x, k: int):
+@torch.library.register_fake("knn_lib::knn_graph")
+def knn_graph_fake(x: torch.Tensor, k: int) -> torch.Tensor:
+    assert k > 0
     out_shape = (2, x.shape[0] * k)  # example
     return torch.empty(out_shape, device=x.device, dtype=torch.int64)
 
-@impl(knn_lib, "knn_graph", "CUDA")
-def knn_lib_cuda(x, k: int):
+@torch.library.register_kernel("knn_lib::knn_graph", "CUDA")
+def knn_lib_cuda(x: torch.Tensor, k: int) -> torch.Tensor:
     if torch.are_deterministic_algorithms_enabled():
         return fallback_knn_graph(x, k)
     return knn_graph(x, k, cosine=True)
-
-@impl(knn_lib, "knn_graph", "CPU")
-def knn_graph_cpu(x, k: int):
-    return fallback_knn_graph(x, k)
-
-@impl(knn_lib, "knn_graph", "XLA")
-def knn_graph_cpu(x, k: int):
-    return fallback_knn_graph(x, k)
 
 
 class GraphLayer(MessagePassing):
