@@ -1,4 +1,4 @@
-from typing import List, Tuple, Optional
+from typing import Tuple, Optional, Sequence
 
 import torch
 import torch.nn.functional as F
@@ -9,7 +9,7 @@ from ...models import BaseModel
 
 
 class RNNVAECategoricalEncoder(torch.nn.Module):
-    def __init__(self, input_dim: int, rnn_type: str = 'lstm', rnn_hidden_dims: List[int] = [60], categories: int = 10,
+    def __init__(self, input_dim: int, rnn_type: str = 'lstm', rnn_hidden_dims: Sequence[int] = (60,), categories: int = 10,
                  bidirectional: bool = False, mode: str = 's2s'):
         super(RNNVAECategoricalEncoder, self).__init__()
 
@@ -26,7 +26,7 @@ class RNNVAECategoricalEncoder(torch.nn.Module):
 
 
 class GRUGMMVAE(BaseModel):
-    def __init__(self, input_dim: int, gru_hidden_dims: List[int] = [60], latent_dim: int = 8, gmm_components: int = 2):
+    def __init__(self, input_dim: int, gru_hidden_dims: Sequence[int] = (60,), latent_dim: int = 8, gmm_components: int = 2):
         """
         Guo2018 (more or less)
 

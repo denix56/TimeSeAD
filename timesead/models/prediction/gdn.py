@@ -331,13 +331,13 @@ class GDN(BaseModel):
 
 
 class GDNAnomalyDetector(PredictionAnomalyDetector):
-    def __init__(self, model: GDN):
+    def __init__(self, model: GDN, num_features: int):
         super(GDNAnomalyDetector, self).__init__()
 
         self.model = model
 
-        self.register_buffer('median', torch.tensor(0.0))
-        self.register_buffer('inv_iqr', torch.tensor(0.0))
+        self.register_buffer('median', torch.zeros(num_features))
+        self.register_buffer('inv_iqr', torch.zeros(num_features))
 
     def compute_online_anomaly_score(self, inputs: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         # x: (B, T, D), x_target (B, 1, D)

@@ -1,4 +1,4 @@
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Sequence
 
 import numpy as np
 import torch
@@ -11,7 +11,7 @@ from ...utils import torch_utils
 
 
 class RNNVAEGaussianEncoder(torch.nn.Module):
-    def __init__(self, input_dim: int, rnn_type: str = 'lstm', rnn_hidden_dims: List[int] = [60], latent_dim: int = 10,
+    def __init__(self, input_dim: int, rnn_type: str = 'lstm', rnn_hidden_dims: Sequence[int] = (60,), latent_dim: int = 10,
                  bidirectional: bool = False, mode: str = 's2s', logvar_out: bool = True):
         super(RNNVAEGaussianEncoder, self).__init__()
 
@@ -35,7 +35,7 @@ class RNNVAEGaussianEncoder(torch.nn.Module):
 
 
 class LSTMVAE(BaseModel):
-    def __init__(self, input_dim: int, lstm_hidden_dims: List[int] = [60], latent_dim: int = 20):
+    def __init__(self, input_dim: int, lstm_hidden_dims: Sequence[int] = (60,), latent_dim: int = 20):
         """
         Base LSTMVAE
 
@@ -70,7 +70,7 @@ class LSTMVAE(BaseModel):
 
 
 class LSTMVAESoelch(LSTMVAE):
-    def __init__(self, input_dim: int, lstm_hidden_dims: List[int] = [60], latent_dim: int = 20,
+    def __init__(self, input_dim: int, lstm_hidden_dims: Sequence[int] = (60,), latent_dim: int = 20,
                  prior_hidden_dim: int = 40):
         """
         Sölch2016
@@ -104,7 +104,7 @@ class LSTMVAESoelch(LSTMVAE):
 
 
 class LSTMVAEPark(LSTMVAE):
-    def __init__(self, input_dim: int, lstm_hidden_dims: List[int] = [60], latent_dim: int = 20,
+    def __init__(self, input_dim: int, lstm_hidden_dims: Sequence[int] = (60,), latent_dim: int = 20,
                  noise_std: float = 0.1):
         """
         Park2018

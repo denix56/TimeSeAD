@@ -79,7 +79,7 @@ class LSTMS2SPrediction(BaseModel):
 
 
 class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
-    def __init__(self, model: LSTMPrediction):
+    def __init__(self, model: LSTMPrediction, num_features: int):
         """
         Malhotra2016
 
@@ -87,8 +87,8 @@ class LSTMPredictionAnomalyDetector(PredictionAnomalyDetector):
         """
         super(LSTMPredictionAnomalyDetector, self).__init__()
         self.model = model
-        self.register_buffer('mean', torch.zeros(1))
-        self.register_buffer('precision', torch.zeros(1))
+        self.register_buffer('mean', torch.zeros(num_features))
+        self.register_buffer('precision', torch.eye(num_features))
 
     @staticmethod
     def _append_window_errors(error_buckets: List[List[torch.Tensor]], error: torch.Tensor, window_start: int) -> None:
