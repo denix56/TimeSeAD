@@ -6,7 +6,7 @@ from typing import Sequence, Tuple
 import torch
 from torch import nn as nn
 from torch.nn import Linear, Parameter, functional as F
-from torch_geometric.nn import MessagePassing, knn_graph
+from torch_geometric.nn import MessagePassing, knn_graph as tg_knn_graph
 from torch_geometric.nn.inits import glorot, zeros
 from torch_geometric.utils import remove_self_loops, add_self_loops, softmax
 
@@ -15,7 +15,7 @@ from ...models import BaseModel
 
 
 @torch.library.custom_op('knn_lib::knn_graph', mutates_args=())
-def knn_graph_cpu(x: torch.Tensor, k: int) -> torch.Tensor:
+def knn_graph(x: torch.Tensor, k: int) -> torch.Tensor:
     return fallback_knn_graph(x, k)
 
 @torch.library.register_fake("knn_lib::knn_graph")
@@ -28,7 +28,7 @@ def knn_graph_fake(x: torch.Tensor, k: int) -> torch.Tensor:
 def knn_lib_cuda(x: torch.Tensor, k: int) -> torch.Tensor:
     if torch.are_deterministic_algorithms_enabled():
         return fallback_knn_graph(x, k)
-    return knn_graph(x, k, cosine=True)
+    return tg_knn_graph(x, k, cosine=True)
 
 
 class GraphLayer(MessagePassing):
@@ -302,7 +302,7 @@ class GDN(BaseModel):
         all_embeddings = self.embedding(node_indices)
         weights_arr = all_embeddings.detach()
 
-        gated_edge_index = torch.ops.knn_graph_lib.knn_graph(weights_arr, self.topk)
+        gated_edge_index = torch.ops.knn_lib.knn_graph(weights_arr, self.topk)
         self.learned_graph = gated_edge_index[0].view(-1, self.topk)
 
         gcn_outs = []
