@@ -25,13 +25,17 @@ def knn_graph_fake(x, k: int):
     out_shape = (2, x.shape[0] * k)  # example
     return torch.empty(out_shape, device=x.device, dtype=torch.int64)
 
-@impl(knn_lib, "knn_graph", "CUDA")
+@impl(knn_lib, "knn_graph", "cuda")
 def knn_lib_cuda(x, k: int):
     if torch.are_deterministic_algorithms_enabled():
         return fallback_knn_graph(x, k)
     return knn_graph(x, k, cosine=True)
 
-@impl(knn_lib, "knn_graph", "CPU")
+@impl(knn_lib, "knn_graph", "cpu")
+def knn_graph_cpu(x, k: int):
+    return fallback_knn_graph(x, k)
+
+@impl(knn_lib, "knn_graph", "xla")
 def knn_graph_cpu(x, k: int):
     return fallback_knn_graph(x, k)
 
