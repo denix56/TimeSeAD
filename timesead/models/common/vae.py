@@ -58,6 +58,7 @@ class DenseVAEEncoder(torch.nn.Module):
         mlp_out = self.mlp(x)
 
         mean, std = mlp_out.tensor_split(2, dim=-1)
+        mean = mean.contiguous()
         std = self.softplus(std)
         # Clamp to avoid zero or negative std when using low precision (e.g., bf16)
         std = std.clamp_min(torch.finfo(std.dtype).eps)
