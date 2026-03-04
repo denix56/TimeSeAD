@@ -255,7 +255,7 @@ class FourierBlock(nn.Module):
         B, L, H, Ein = q.shape
         assert H == self.num_heads
         assert Ein == self.Ein
-        assert L == self.seq_len
+        assert L == self.seq_len, f"{L}, {self.seq_len}"
 
         with torch.autocast(device_type='cpu' if q.device.type == 'meta' else q.device.type,
                             enabled=False):
