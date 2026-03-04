@@ -149,10 +149,10 @@ class AutoCorrelation(nn.Module):
             keys = keys[:, :L, :, :]
 
         # period-based dependencies
-        q_fft = torch.fft.rfft(queries.permute(0, 2, 3, 1).contiguous(), dim=-1)
-        k_fft = torch.fft.rfft(keys.permute(0, 2, 3, 1).contiguous(), dim=-1)
+        q_fft = torch.fft.rfft(queries.permute(0, 2, 3, 1).contiguous().float(), dim=-1)
+        k_fft = torch.fft.rfft(keys.permute(0, 2, 3, 1).contiguous().float(), dim=-1)
         res = q_fft * torch.conj(k_fft)
-        corr = torch.fft.irfft(res, dim=-1)
+        corr = torch.fft.irfft(res, dim=-1).to(queries.dtype)
 
         # time delay agg
         if self.training:
