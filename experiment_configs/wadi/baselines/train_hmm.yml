@@ -1,0 +1,30 @@
+params:
+  training_experiment: baselines.train_hmm
+  validation_metric: best_ts_f1_score
+  evaluation_metrics:
+    - best_ts_f1_score
+    - ts_auprc
+    - best_ts_f1_score_classic
+    - ts_auprc_unweighted
+    - best_f1_score
+    - auprc
+dataset:
+  name: WADIDataset
+training_param_updates:
+  dataset:
+    name: WADIDataset
+  training:
+    epochs: 1
+detector_param_grid:
+  detector_params:
+    n_components:
+      - 2
+      - 4
+      - 8
+      - 16
+    covariance_type:
+      - diag
+      - full
+    n_iter:
+      - 50
+      - 100

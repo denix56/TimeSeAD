@@ -1,0 +1,30 @@
+params:
+  training_experiment: baselines.train_gmmhmm
+  validation_metric: best_ts_f1_score
+  evaluation_metrics:
+    - best_ts_f1_score
+    - ts_auprc
+    - best_ts_f1_score_classic
+    - ts_auprc_unweighted
+    - best_f1_score
+    - auprc
+dataset:
+  name: SWaTDataset
+training_param_updates:
+  dataset:
+    name: SWaTDataset
+  training:
+    epochs: 1
+detector_param_grid:
+  detector_params:
+    n_components:
+      - 2
+      - 4
+      - 8
+    n_mix:
+      - 1
+      - 2
+      - 3
+    n_iter:
+      - 50
+      - 100

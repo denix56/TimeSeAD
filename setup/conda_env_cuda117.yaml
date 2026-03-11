@@ -19,3 +19,4 @@ dependencies:
   - pip:
       - pyreadr==0.4.9
       - sacred==0.8.4
+      - hmmlearn
