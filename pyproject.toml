@@ -34,6 +34,7 @@ dependencies = [
   "torchvision>=0.2.2",
   "torch-geometric",
   "opt_einsum",
+  "hmmlearn>=0.3.3",
   #"torch-cluster @ git+https://github.com/rusty1s/pytorch_cluster.git", # build separately
   "pyreadr",
   "pyod",
@@ -62,4 +63,3 @@ Homepage = "https://github.com/denix56/TimeSeAD"
 [tool.uv.build-backend]
 module-name = ["timesead", "timesead_experiments"]
 module-root = ""
-
