@@ -38,6 +38,8 @@ def _run_transform_input_with_debug(
         index_value=item,
         input_value=tensor,
         extra={'input_idx': input_idx},
+        log_level=logging.INFO,
+        initialize_logging=True,
     )
 
 
@@ -187,12 +189,16 @@ class _BaseInputTransform(Transform):
 
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
         transform_name = type(self).__name__
+        debug_input = {}
 
         def _fetch_datapoint() -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
             if random.random() >= self.apply_prob:
-                return self.parent.get_datapoint(item)
+                parent_datapoint = self.parent.get_datapoint(item)
+                debug_input['value'] = parent_datapoint
+                return parent_datapoint
 
             inputs, targets = self.parent.get_datapoint(item)
+            debug_input['value'] = (inputs, targets)
             transformed_inputs = tuple(
                 _run_transform_input_with_debug(self, item, input_idx, inp)
                 for input_idx, inp in enumerate(inputs)
@@ -208,6 +214,9 @@ class _BaseInputTransform(Transform):
             _fetch_datapoint,
             index_label='item_idx',
             index_value=item,
+            input_value=lambda _: debug_input.get('value'),
+            log_level=logging.INFO,
+            initialize_logging=True,
         )
 
 

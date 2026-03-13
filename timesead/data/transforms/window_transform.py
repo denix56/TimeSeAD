@@ -88,9 +88,18 @@ class WindowTransform(Transform):
 
 class WindowTransformIfNotWindow(WindowTransform):
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
+        debug_input = {}
+
         def _fetch_datapoint() -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
             if self.parent.ndim == 2:
-                return super(WindowTransformIfNotWindow, self)._get_datapoint_impl(item)
+                old_i, start = self._inverse_transform_index(item, self.parent.seq_len)
+                end = start + self._window_size
+                inputs, targets = self.parent.get_datapoint(old_i)
+                debug_input['value'] = (inputs, targets)
+
+                out_inputs = tuple(inp[start:end] for inp in inputs)
+                out_targets = tuple(t[start:end] for t in targets)
+                return out_inputs, out_targets
 
             old_i, start = self._inverse_transform_index(item, self.parent.window_size)
             end = start + self._window_size
@@ -103,6 +112,7 @@ class WindowTransformIfNotWindow(WindowTransform):
             item_idx = (old_i - cum_seq_len[idx - 1]) if idx > 0 else old_i
 
             inputs, targets = self.parent.get_datapoint(idx)
+            debug_input['value'] = (inputs, targets)
             inputs = tuple(inp[item_idx, start:end] for inp in inputs)
             targets = tuple(tgt[item_idx, start:end] if tgt.ndim > 1 else tgt[item_idx] for tgt in targets)
             return inputs, targets
@@ -113,6 +123,9 @@ class WindowTransformIfNotWindow(WindowTransform):
             _fetch_datapoint,
             index_label='item_idx',
             index_value=item,
+            input_value=lambda _: debug_input.get('value'),
+            log_level=logging.INFO,
+            initialize_logging=True,
         )
 
     def __len__(self):

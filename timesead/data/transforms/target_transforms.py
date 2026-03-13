@@ -26,8 +26,11 @@ class ReconstructionTargetTransform(Transform):
         self.replace_labels = replace_labels
 
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
+        debug_input = {}
+
         def _fetch_datapoint() -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
             inputs, targets = self.parent.get_datapoint(item)
+            debug_input['value'] = (inputs, targets)
 
             if self.replace_labels:
                 return inputs, inputs
@@ -40,6 +43,9 @@ class ReconstructionTargetTransform(Transform):
             _fetch_datapoint,
             index_label='item_idx',
             index_value=item,
+            input_value=lambda _: debug_input.get('value'),
+            log_level=logging.INFO,
+            initialize_logging=True,
         )
 
 
