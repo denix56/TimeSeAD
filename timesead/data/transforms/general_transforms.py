@@ -1,4 +1,5 @@
 import functools
+import logging
 import math
 import random
 from typing import Tuple
@@ -7,7 +8,37 @@ import numpy as np
 import torch
 
 from .transform_base import Transform
+from .._debug_timing import run_with_debug_timing
 from ...utils.utils import ceil_div, getitem
+
+_logger = logging.getLogger(__name__)
+_TARGETED_DEBUG_TRANSFORMS = {
+    'MagAddNoiseTransform',
+    'MagScaleTransform',
+    'MaskOutTransform',
+    'TimeWarpTransform',
+}
+
+
+def _run_transform_input_with_debug(
+    transform: '_BaseInputTransform',
+    item: int,
+    input_idx: int,
+    tensor: torch.Tensor,
+) -> torch.Tensor:
+    transform_name = type(transform).__name__
+    if transform_name not in _TARGETED_DEBUG_TRANSFORMS:
+        return transform._transform_input(tensor)
+
+    return run_with_debug_timing(
+        _logger,
+        f'{transform_name}._transform_input',
+        lambda: transform._transform_input(tensor),
+        index_label='item_idx',
+        index_value=item,
+        input_value=tensor,
+        extra={'input_idx': input_idx},
+    )
 
 
 def _linear_interpolate_sequence(x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
@@ -155,12 +186,29 @@ class _BaseInputTransform(Transform):
         raise NotImplementedError
 
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
-        if random.random() >= self.apply_prob:
-            return self.parent.get_datapoint(item)
+        transform_name = type(self).__name__
 
-        inputs, targets = self.parent.get_datapoint(item)
-        inputs = tuple(self._transform_input(inp) for inp in inputs)
-        return inputs, targets
+        def _fetch_datapoint() -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
+            if random.random() >= self.apply_prob:
+                return self.parent.get_datapoint(item)
+
+            inputs, targets = self.parent.get_datapoint(item)
+            transformed_inputs = tuple(
+                _run_transform_input_with_debug(self, item, input_idx, inp)
+                for input_idx, inp in enumerate(inputs)
+            )
+            return transformed_inputs, targets
+
+        if transform_name not in _TARGETED_DEBUG_TRANSFORMS:
+            return _fetch_datapoint()
+
+        return run_with_debug_timing(
+            _logger,
+            f'{transform_name}._get_datapoint_impl',
+            _fetch_datapoint,
+            index_label='item_idx',
+            index_value=item,
+        )
 
 
 class MagAddNoiseTransform(_BaseInputTransform):

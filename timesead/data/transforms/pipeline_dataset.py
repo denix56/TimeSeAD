@@ -5,6 +5,7 @@ from typing import List, Tuple, Dict, Union, Any
 import torch
 
 from ..dataset import BaseTSDataset
+from .._debug_timing import run_with_debug_timing
 from .transform_base import Transform
 from ...utils.utils import objspec2constructor
 
@@ -69,7 +70,13 @@ class PipelineDataset(BaseTSDataset):
             yield self[i]
 
     def __getitem__(self, item) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
-        return self.sink_transform.get_datapoint(item)
+        return run_with_debug_timing(
+            _logger,
+            'PipelineDataset.__getitem__',
+            lambda: self.sink_transform.get_datapoint(item),
+            index_label='item_idx',
+            index_value=item,
+        )
 
     def __len__(self):
         return len(self.sink_transform)
