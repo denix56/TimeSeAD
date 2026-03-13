@@ -39,6 +39,8 @@ class Transform(abc.ABC):
             lambda: self._get_datapoint_impl(item),
             index_label='item_idx',
             index_value=item,
+            log_level=logging.INFO,
+            initialize_logging=True,
         )
 
     def __getitem__(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:

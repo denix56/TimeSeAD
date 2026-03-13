@@ -10,6 +10,7 @@ _DEBUG_LOG_FIRST_N = 3
 _DEBUG_LOG_EVERY_N = 512
 _DEBUG_LOG_SLOW_SECS = 0.05
 _stage_call_counts = collections.Counter()
+_configured_logging_pids = set()
 
 
 def _next_stage_call_idx(stage: str) -> int:
@@ -70,6 +71,21 @@ def _format_extra(extra: Any) -> str:
     return ' ' + ' '.join(f'{key}={value}' for key, value in extra.items())
 
 
+def _ensure_process_logging(log_level: int) -> None:
+    pid = os.getpid()
+    if pid in _configured_logging_pids:
+        return
+
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(
+            level=log_level,
+            format='%(asctime)s %(levelname)s %(name)s %(message)s',
+        )
+
+    _configured_logging_pids.add(pid)
+
+
 def run_with_debug_timing(
     logger: logging.Logger,
     stage: str,
@@ -80,8 +96,13 @@ def run_with_debug_timing(
     input_value: Any = None,
     output_value: Any = None,
     extra: Any = None,
+    log_level: int = logging.DEBUG,
+    initialize_logging: bool = False,
 ) -> Any:
-    if not logger.isEnabledFor(logging.DEBUG):
+    if initialize_logging:
+        _ensure_process_logging(log_level)
+
+    if not logger.isEnabledFor(log_level):
         return fn()
 
     call_idx = _next_stage_call_idx(stage)
@@ -95,7 +116,8 @@ def run_with_debug_timing(
         debug_output = result if output_value is None else _resolve_debug_value(output_value, result)
         debug_extra = _resolve_debug_value(extra, result)
 
-        logger.debug(
+        logger.log(
+            log_level,
             '%s %s=%s elapsed=%.6fs pid=%s worker_id=%s call_idx=%s input_shapes=%s output_shapes=%s%s',
             stage,
             index_label,
