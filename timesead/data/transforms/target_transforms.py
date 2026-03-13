@@ -1,9 +1,13 @@
+import logging
 from typing import Tuple, Optional, List, Any, Union
 
 import torch
 
+from .._debug_timing import run_with_debug_timing
 from .transform_base import Transform
 from .window_transform import WindowTransformIfNotWindow
+
+_logger = logging.getLogger(__name__)
 
 
 class ReconstructionTargetTransform(Transform):
@@ -22,12 +26,21 @@ class ReconstructionTargetTransform(Transform):
         self.replace_labels = replace_labels
 
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
-        inputs, targets = self.parent.get_datapoint(item)
+        def _fetch_datapoint() -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
+            inputs, targets = self.parent.get_datapoint(item)
 
-        if self.replace_labels:
-            return inputs, inputs
+            if self.replace_labels:
+                return inputs, inputs
 
-        return inputs, targets + inputs
+            return inputs, targets + inputs
+
+        return run_with_debug_timing(
+            _logger,
+            'ReconstructionTargetTransform._get_datapoint_impl',
+            _fetch_datapoint,
+            index_label='item_idx',
+            index_value=item,
+        )
 
 
 class OneVsRestTargetTransform(Transform):

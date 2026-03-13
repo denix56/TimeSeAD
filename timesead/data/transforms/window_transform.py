@@ -1,10 +1,14 @@
+import logging
 from typing import Tuple, Union, List, Optional, Iterable
 
 import numpy as np
 import torch
 
+from .._debug_timing import run_with_debug_timing
 from .transform_base import Transform
 from ...utils.utils import ceil_div
+
+_logger = logging.getLogger(__name__)
 
 
 class WindowTransform(Transform):
@@ -84,9 +88,10 @@ class WindowTransform(Transform):
 
 class WindowTransformIfNotWindow(WindowTransform):
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
-        if self.parent.ndim == 2:
-            return super()._get_datapoint_impl(item)
-        else:
+        def _fetch_datapoint() -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
+            if self.parent.ndim == 2:
+                return super(WindowTransformIfNotWindow, self)._get_datapoint_impl(item)
+
             old_i, start = self._inverse_transform_index(item, self.parent.window_size)
             end = start + self._window_size
             seq_len = self.parent.seq_len
@@ -101,6 +106,14 @@ class WindowTransformIfNotWindow(WindowTransform):
             inputs = tuple(inp[item_idx, start:end] for inp in inputs)
             targets = tuple(tgt[item_idx, start:end] if tgt.ndim > 1 else tgt[item_idx] for tgt in targets)
             return inputs, targets
+
+        return run_with_debug_timing(
+            _logger,
+            'WindowTransformIfNotWindow._get_datapoint_impl',
+            _fetch_datapoint,
+            index_label='item_idx',
+            index_value=item,
+        )
 
     def __len__(self):
         if self.parent.ndim == 2:

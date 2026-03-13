@@ -1,7 +1,12 @@
 import abc
+import logging
 from typing import Tuple, Optional, List, Union
 
 import torch
+
+from .._debug_timing import run_with_debug_timing
+
+_logger = logging.getLogger(__name__)
 
 
 class Transform(abc.ABC):
@@ -28,7 +33,13 @@ class Transform(abc.ABC):
         if not (0 <= item < len(self)):
             raise IndexError(f"Item {item} is out of range [0, {len(self)}]")
 
-        return self._get_datapoint_impl(item)
+        return run_with_debug_timing(
+            _logger,
+            f'{type(self).__name__}.get_datapoint',
+            lambda: self._get_datapoint_impl(item),
+            index_label='item_idx',
+            index_value=item,
+        )
 
     def __getitem__(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
         return self.get_datapoint(item)
@@ -72,4 +83,3 @@ class Transform(abc.ABC):
     @property
     def window_size(self) -> Optional[int]:
         return self.parent.window_size if self.parent is not None else None
-

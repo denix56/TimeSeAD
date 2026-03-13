@@ -1,12 +1,48 @@
 import abc
 import collections.abc
 import functools
+import itertools
+import logging
 from typing import Tuple, Union, Callable, Any, Dict, List, Optional
 
 import torch
 from torch.utils.data import Dataset
 #from torch.utils.data._utils.collate import np_str_obj_array_pattern, default_collate_err_msg_format
 from torch.utils.data._utils.collate import collate
+
+from ._debug_timing import run_with_debug_timing
+
+_logger = logging.getLogger(__name__)
+_collate_batch_call_idx = itertools.count()
+_active_collate_batch_call_idx = []
+
+
+def _get_active_collate_batch_call_idx() -> int:
+    if _active_collate_batch_call_idx:
+        return _active_collate_batch_call_idx[-1]
+
+    return next(_collate_batch_call_idx)
+
+
+def _collate_with_batch_dim(
+    batch,
+    *,
+    collate_fn_map: Optional[dict[Union[type, tuple[type, ...]], Callable]] = None,
+):
+    batch_call_idx = next(_collate_batch_call_idx)
+    _active_collate_batch_call_idx.append(batch_call_idx)
+    try:
+        return run_with_debug_timing(
+            _logger,
+            'collate_fn',
+            lambda: collate(batch, collate_fn_map=collate_fn_map),
+            index_label='batch_call_idx',
+            index_value=batch_call_idx,
+            input_value=batch,
+            extra={'batch_size': len(batch)},
+        )
+    finally:
+        _active_collate_batch_call_idx.pop()
 
 
 class BaseTSDataset(abc.ABC, Dataset):
@@ -122,33 +158,46 @@ def collate_tensor_fn(
         an additional batch dimension inserted at ``batch_dim``.
     :rtype: torch.Tensor
     """
-    elem = batch[0]
-    out = None
-    if elem.is_nested:
-        raise RuntimeError(
-            "Batches of nested tensors are not currently supported by the default collate_fn; "
-            "please provide a custom collate_fn to handle them appropriately."
-        )
-    if elem.layout in {
-        torch.sparse_coo,
-        torch.sparse_csr,
-        torch.sparse_bsr,
-        torch.sparse_csc,
-        torch.sparse_bsc,
-    }:
-        raise RuntimeError(
-            "Batches of sparse tensors are not currently supported by the default collate_fn; "
-            "please provide a custom collate_fn to handle them appropriately."
-        )
-    if torch.utils.data.get_worker_info() is not None:
-        # If we're in a background process, concatenate directly into a
-        # shared memory tensor to avoid an extra copy
-        numel = sum(x.numel() for x in batch)
-        storage = elem._typed_storage()._new_shared(numel, device=elem.device)
-        shape = list(elem.size())
-        shape.insert(batch_dim, len(batch))
-        out = elem.new(storage).resize_(*shape)
-    return torch.stack(batch, dim=batch_dim, out=out)
+    batch_call_idx = _get_active_collate_batch_call_idx()
+
+    def _collate_tensors() -> torch.Tensor:
+        elem = batch[0]
+        out = None
+        if elem.is_nested:
+            raise RuntimeError(
+                "Batches of nested tensors are not currently supported by the default collate_fn; "
+                "please provide a custom collate_fn to handle them appropriately."
+            )
+        if elem.layout in {
+            torch.sparse_coo,
+            torch.sparse_csr,
+            torch.sparse_bsr,
+            torch.sparse_csc,
+            torch.sparse_bsc,
+        }:
+            raise RuntimeError(
+                "Batches of sparse tensors are not currently supported by the default collate_fn; "
+                "please provide a custom collate_fn to handle them appropriately."
+            )
+        if torch.utils.data.get_worker_info() is not None:
+            # If we're in a background process, concatenate directly into a
+            # shared memory tensor to avoid an extra copy
+            numel = sum(x.numel() for x in batch)
+            storage = elem._typed_storage()._new_shared(numel, device=elem.device)
+            shape = list(elem.size())
+            shape.insert(batch_dim, len(batch))
+            out = elem.new(storage).resize_(*shape)
+        return torch.stack(batch, dim=batch_dim, out=out)
+
+    return run_with_debug_timing(
+        _logger,
+        'collate_tensor_fn',
+        _collate_tensors,
+        index_label='batch_call_idx',
+        index_value=batch_call_idx,
+        input_value=batch,
+        extra={'batch_size': len(batch), 'batch_dim': batch_dim},
+    )
 
 
 def collate_fn(batch_dim: int) -> Callable:
@@ -183,5 +232,4 @@ def collate_fn(batch_dim: int) -> Callable:
     :rtype: Callable
     """
     collate_fn_map = {torch.Tensor: functools.partial(collate_tensor_fn, batch_dim=batch_dim)}
-    return functools.partial(collate, collate_fn_map=collate_fn_map)
-
+    return functools.partial(_collate_with_batch_dim, collate_fn_map=collate_fn_map)
