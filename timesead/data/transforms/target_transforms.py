@@ -48,6 +48,48 @@ class ReconstructionTargetTransform(Transform):
         )
 
 
+class FiniteDifferencesTargetTransform(Transform):
+    """
+    Adds the finite differences of the input data as targets for reconstruction objectives.
+    This can be used to train models on the underlying vector field of normal data.
+    """
+    def __init__(self, parent: Transform, replace_labels: bool = False):
+        """
+
+        :param parent: Another :class:`~timesead.data.transforms.Transform` which is used as the data source for this
+            transform.
+        :param replace_labels: Whether the original labels should be replaced by the finite difference target.
+           If `False`, the finite difference target will be added to the tuple of original labels.
+        """
+        super(FiniteDifferencesTargetTransform, self).__init__(parent)
+        self.replace_labels = replace_labels
+
+    def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
+        """
+        Returns:
+            new_targets: with t_i being the approximate derivative at point x_i by finite-difference:
+                t_i = x_{i+1} - x_i
+            new_inputs: same as inputs but without the last point to match the target sequence length
+        """
+        inputs, targets = self.parent.get_datapoint(item)
+
+        new_targets = tuple(inp[1:] - inp[:-1] for inp in inputs)
+        new_inputs = tuple(inp[:-1] for inp in inputs)
+
+        if self.replace_labels:
+            return new_inputs, new_targets
+
+        return new_inputs, targets + new_targets
+
+    @property
+    def seq_len(self) -> Union[int, List[int]]:
+        parent_seq_len = self.parent.seq_len
+        if isinstance(parent_seq_len, int):
+            return max(parent_seq_len - 1, 0)
+
+        return [max(slen - 1, 0) for slen in parent_seq_len]
+
+
 class OneVsRestTargetTransform(Transform):
     """
     Transforms multi-class labels into binary labels for anomaly detection.

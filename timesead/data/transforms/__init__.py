@@ -9,8 +9,8 @@ from .general_transforms import (
     TimeWarpTransform,
     TranslateXTransform,
 )
-from .target_transforms import ReconstructionTargetTransform, OneVsRestTargetTransform, PredictionTargetTransform, \
-    OverlapPredictionTargetTransform
+from .target_transforms import ReconstructionTargetTransform, FiniteDifferencesTargetTransform, \
+    OneVsRestTargetTransform, PredictionTargetTransform, OverlapPredictionTargetTransform
 from .window_transform import WindowTransform, WindowTransformIfNotWindow
 
 from .dataset_source import DatasetSource, make_dataset_split
