@@ -151,15 +151,13 @@ class WindowTransformIfNotWindow(WindowTransform):
         return inputs, targets
 
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
-        if not _logger.isEnabledFor(logging.DEBUG):
-            return self._fetch_datapoint(item)
-
         return run_with_debug_timing(
             _logger,
             'WindowTransformIfNotWindow._get_datapoint_impl',
             lambda: self._fetch_datapoint(item),
             index_label='item_idx',
             index_value=item,
+            initialize_logging=True,
         )
 
     def __len__(self):
