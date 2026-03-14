@@ -37,6 +37,9 @@ class ReconstructionTargetTransform(Transform):
 
             return inputs, targets + inputs
 
+        if not _logger.isEnabledFor(logging.DEBUG):
+            return _fetch_datapoint()
+
         return run_with_debug_timing(
             _logger,
             'ReconstructionTargetTransform._get_datapoint_impl',

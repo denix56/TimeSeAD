@@ -22,6 +22,8 @@ class Transform(abc.ABC):
             Can be `None` in the case of a source.
         """
         self.parent = parent
+        self._cached_len: Optional[int] = None
+        self._has_cached_len = False
 
     def get_datapoint(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
         """
@@ -30,8 +32,12 @@ class Transform(abc.ABC):
         :param item: Must be `0<=item<len(self)`
         :return: A datapoint of the form `(inputs, targets)`, where `inputs` and `targets` are tuples of tensors.
         """
-        if not (0 <= item < len(self)):
-            raise IndexError(f"Item {item} is out of range [0, {len(self)}]")
+        length = len(self)
+        if not (0 <= item < length):
+            raise IndexError(f"Item {item} is out of range [0, {length}]")
+
+        if not _logger.isEnabledFor(logging.DEBUG):
+            return self._get_datapoint_impl(item)
 
         return run_with_debug_timing(
             _logger,
@@ -60,7 +66,14 @@ class Transform(abc.ABC):
         """
         This should return the number of available sequences after the transformation.
         """
-        return len(self.parent) if self.parent is not None else None
+        if self.parent is None:
+            return None
+
+        if not self._has_cached_len:
+            self._cached_len = len(self.parent)
+            self._has_cached_len = True
+
+        return self._cached_len
 
     @property
     def seq_len(self) -> Union[int, List[int]]:

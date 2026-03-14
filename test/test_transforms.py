@@ -9,7 +9,7 @@ import torch
 from timesead.data.dataset import BaseTSDataset
 from timesead.data.tep_dataset import TEPDataset
 from timesead.data.transforms import DatasetSource, PipelineDataset, WindowTransform, ReconstructionTargetTransform, \
-    OneVsRestTargetTransform, SubsampleTransform
+    OneVsRestTargetTransform, SubsampleTransform, WindowTransformIfNotWindow, MaskOutTransform
 from timesead.utils.utils import ceil_div
 
 
@@ -37,6 +37,41 @@ class TensorDataset(BaseTSDataset):
 
     def __len__(self):
         return len(self.tensor)
+
+
+class WindowedTensorDataset(BaseTSDataset):
+    def __init__(self, tensor, targets):
+        self.tensor = tensor
+        self.targets = targets
+
+    def __len__(self):
+        return len(self.tensor)
+
+    @property
+    def seq_len(self) -> Union[int, List[int]]:
+        return [self.tensor.shape[1]] * len(self.tensor)
+
+    @property
+    def num_features(self) -> Union[int, Tuple[int, ...]]:
+        return self.tensor.shape[-1]
+
+    @property
+    def ndim(self) -> int:
+        return 3
+
+    @property
+    def window_size(self) -> int:
+        return self.tensor.shape[2]
+
+    @staticmethod
+    def get_default_pipeline() -> Dict[str, Dict[str, Any]]:
+        return {}
+
+    def get_feature_names(self) -> List[str]:
+        return [''] * self.num_features
+
+    def __getitem__(self, item):
+        return (self.tensor[item],), (self.targets[item],)
 
 
 class TestTransform(TestCase):
@@ -85,6 +120,46 @@ class TestTransform(TestCase):
         for i, (inputs, targets) in enumerate(loader):
             data_index, time_index = divmod(i, (time_length - window_size + 1))
             self.assertTrue(torch.all(data[data_index, time_index:time_index + window_size] == inputs[0][0]))
+
+    def test_window_if_not_window_flattens_prewindowed_source(self):
+        data = torch.tensor(
+            [
+                [
+                    [[0.0], [1.0], [2.0], [3.0], [4.0]],
+                    [[10.0], [11.0], [12.0], [13.0], [14.0]],
+                ]
+            ]
+        )
+        labels = torch.tensor([[3, 7]])
+        source = DatasetSource(WindowedTensorDataset(data, labels))
+        window = WindowTransformIfNotWindow(source, window_size=3)
+        dataset = PipelineDataset(window)
+
+        expected = [
+            torch.tensor([[0.0], [1.0], [2.0]]),
+            torch.tensor([[1.0], [2.0], [3.0]]),
+            torch.tensor([[2.0], [3.0], [4.0]]),
+            torch.tensor([[10.0], [11.0], [12.0]]),
+            torch.tensor([[11.0], [12.0], [13.0]]),
+            torch.tensor([[12.0], [13.0], [14.0]]),
+        ]
+        expected_labels = [3, 3, 3, 7, 7, 7]
+
+        for i in range(len(dataset)):
+            inputs, targets = dataset[i]
+            self.assertTrue(torch.equal(inputs[0], expected[i]))
+            self.assertEqual(targets[0].item(), expected_labels[i])
+
+    def test_input_augmentation_does_not_mutate_reconstruction_target(self):
+        data = torch.tensor([[[1.0], [2.0], [3.0], [4.0]]])
+        source = DatasetSource(TensorDataset(data))
+        pipe = ReconstructionTargetTransform(source, replace_labels=True)
+        pipe = MaskOutTransform(pipe, magnitude=1.0, apply_prob=1.0)
+        dataset = PipelineDataset(pipe)
+
+        inputs, targets = dataset[0]
+        self.assertTrue(torch.equal(inputs[0], torch.zeros_like(data[0])))
+        self.assertTrue(torch.equal(targets[0], data[0]))
 
     def test_subsample(self):
         time_length = random.randint(10, 50)

@@ -1,6 +1,5 @@
 import functools
 import logging
-import math
 import random
 from typing import Tuple
 
@@ -27,7 +26,7 @@ def _run_transform_input_with_debug(
     tensor: torch.Tensor,
 ) -> torch.Tensor:
     transform_name = type(transform).__name__
-    if transform_name not in _TARGETED_DEBUG_TRANSFORMS:
+    if transform_name not in _TARGETED_DEBUG_TRANSFORMS or not _logger.isEnabledFor(logging.DEBUG):
         return transform._transform_input(tensor)
 
     return run_with_debug_timing(
@@ -38,8 +37,6 @@ def _run_transform_input_with_debug(
         index_value=item,
         input_value=tensor,
         extra={'input_idx': input_idx},
-        log_level=logging.INFO,
-        initialize_logging=True,
     )
 
 
@@ -187,36 +184,35 @@ class _BaseInputTransform(Transform):
     def _transform_input(self, tensor: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
+    def _fetch_datapoint(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
+        if self.apply_prob <= 0:
+            return self.parent.get_datapoint(item)
+
+        if self.apply_prob < 1 and random.random() >= self.apply_prob:
+            return self.parent.get_datapoint(item)
+
+        inputs, targets = self.parent.get_datapoint(item)
+        if len(inputs) == 1:
+            return (_run_transform_input_with_debug(self, item, 0, inputs[0]),), targets
+
+        transformed_inputs = tuple(
+            _run_transform_input_with_debug(self, item, input_idx, inp)
+            for input_idx, inp in enumerate(inputs)
+        )
+        return transformed_inputs, targets
+
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
         transform_name = type(self).__name__
-        debug_input = {}
 
-        def _fetch_datapoint() -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
-            if random.random() >= self.apply_prob:
-                parent_datapoint = self.parent.get_datapoint(item)
-                debug_input['value'] = parent_datapoint
-                return parent_datapoint
-
-            inputs, targets = self.parent.get_datapoint(item)
-            debug_input['value'] = (inputs, targets)
-            transformed_inputs = tuple(
-                _run_transform_input_with_debug(self, item, input_idx, inp)
-                for input_idx, inp in enumerate(inputs)
-            )
-            return transformed_inputs, targets
-
-        if transform_name not in _TARGETED_DEBUG_TRANSFORMS:
-            return _fetch_datapoint()
+        if transform_name not in _TARGETED_DEBUG_TRANSFORMS or not _logger.isEnabledFor(logging.DEBUG):
+            return self._fetch_datapoint(item)
 
         return run_with_debug_timing(
             _logger,
             f'{transform_name}._get_datapoint_impl',
-            _fetch_datapoint,
+            lambda: self._fetch_datapoint(item),
             index_label='item_idx',
             index_value=item,
-            input_value=lambda _: debug_input.get('value'),
-            log_level=logging.INFO,
-            initialize_logging=True,
         )
 
 
@@ -245,8 +241,9 @@ class MagAddNoiseTransform(_BaseInputTransform):
 
         diffs = tensor[1:] - tensor[:-1]
         std = diffs.std(dim=0, keepdim=True).clamp_min(torch.finfo(tensor.dtype).eps)
-        noise = torch.normal(0, 1 / 3, size=tensor.shape, device=tensor.device, dtype=tensor.dtype)
-        return tensor + noise * std * self.magnitude
+        noise = torch.empty_like(tensor).normal_(0, 1 / 3)
+        noise.mul_(std).mul_(self.magnitude).add_(tensor)
+        return noise
 
 
 class MagScaleTransform(_BaseInputTransform):
@@ -277,9 +274,11 @@ class MagScaleTransform(_BaseInputTransform):
         if self.magnitude <= 0:
             return tensor
 
-        rand = torch.abs(torch.randn((), device=tensor.device, dtype=tensor.dtype))
+        rand = torch.randn((), device=tensor.device, dtype=tensor.dtype).abs_()
         scale = (1 - (rand * self.magnitude) / 2) if random.random() > 1 / 3 else (1 + rand * self.magnitude)
-        return tensor * scale
+        output = tensor.clone()
+        output.mul_(scale)
+        return output
 
 
 class TimeWarpTransform(_BaseInputTransform):
@@ -304,18 +303,31 @@ class TimeWarpTransform(_BaseInputTransform):
         super().__init__(parent, apply_prob)
         self.magnitude = magnitude
         self.order = order
+        self._base_index_cache = {}
+
+    def _get_base_index(self, seq_len: int, tensor: torch.Tensor) -> torch.Tensor:
+        cache_key = (seq_len, tensor.device, tensor.dtype)
+        base_idx = self._base_index_cache.get(cache_key)
+        if base_idx is None:
+            base_idx = torch.arange(seq_len, device=tensor.device, dtype=tensor.dtype)
+            self._base_index_cache[cache_key] = base_idx
+
+        return base_idx
 
     def _transform_input(self, tensor: torch.Tensor) -> torch.Tensor:
         if self.magnitude <= 0 or tensor.shape[0] < 2:
             return tensor
 
         seq_len = tensor.shape[0]
-        base_idx = torch.arange(seq_len, device=tensor.device, dtype=tensor.dtype)
+        base_idx = self._get_base_index(seq_len, tensor)
 
-        rand_curve = torch.randn((self.order, seq_len), device=tensor.device, dtype=tensor.dtype)
-        weights = torch.abs(rand_curve).mean(dim=0)
+        rand_curve = torch.empty((self.order, seq_len), device=tensor.device, dtype=tensor.dtype).normal_()
+        weights = rand_curve.abs_().mean(dim=0)
         cum_curve = torch.cumsum(weights, dim=0)
-        cum_curve = (cum_curve - cum_curve.min()) / (cum_curve.max() - cum_curve.min() + torch.finfo(tensor.dtype).eps)
+        curve_start = cum_curve[0].clone()
+        curve_end = cum_curve[-1].clone()
+        curve_range = (curve_end - curve_start).clamp_min(torch.finfo(tensor.dtype).eps)
+        cum_curve.sub_(curve_start).div_(curve_range)
 
         warped_positions = (1 - self.magnitude) * base_idx + self.magnitude * cum_curve * (seq_len - 1)
         warped_positions = torch.clamp(warped_positions, 0, seq_len - 1)
@@ -348,11 +360,13 @@ class MaskOutTransform(_BaseInputTransform):
             return tensor
 
         mask = torch.rand_like(tensor) < self.magnitude
+        output = tensor.clone()
         if self.compensate:
             masked_ratio = torch.sum(mask, dim=0, keepdim=True) / tensor.shape[0]
             masked_ratio = torch.clamp(masked_ratio, max=1 - torch.finfo(tensor.dtype).eps)
-            tensor = tensor / (1 - masked_ratio)
-        return tensor.masked_fill(mask, 0)
+            output.div_(1 - masked_ratio)
+        output.masked_fill_(mask, 0)
+        return output
 
 
 class TranslateXTransform(_BaseInputTransform):

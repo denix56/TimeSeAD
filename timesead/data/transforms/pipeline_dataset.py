@@ -81,6 +81,9 @@ class PipelineDataset(BaseTSDataset):
         )
 
     def __getitem__(self, item) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
+        if not _logger.isEnabledFor(logging.DEBUG):
+            return self.sink_transform.get_datapoint(item)
+
         return run_with_debug_timing(
             _logger,
             'PipelineDataset.__getitem__',
@@ -92,7 +95,10 @@ class PipelineDataset(BaseTSDataset):
         )
 
     def __len__(self):
-        return len(self.sink_transform)
+        if not hasattr(self, '_cached_len'):
+            self._cached_len = len(self.sink_transform)
+
+        return self._cached_len
 
     @property
     def seq_len(self) -> Union[int, List[int]]:
