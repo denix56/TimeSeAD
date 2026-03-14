@@ -36,16 +36,12 @@ class Transform(abc.ABC):
         if not (0 <= item < length):
             raise IndexError(f"Item {item} is out of range [0, {length}]")
 
-        if not _logger.isEnabledFor(logging.DEBUG):
-            return self._get_datapoint_impl(item)
-
         return run_with_debug_timing(
             _logger,
             f'{type(self).__name__}.get_datapoint',
             lambda: self._get_datapoint_impl(item),
             index_label='item_idx',
             index_value=item,
-            log_level=logging.INFO,
             initialize_logging=True,
         )
 

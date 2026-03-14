@@ -9,6 +9,8 @@ import torch
 _DEBUG_LOG_FIRST_N = 3
 _DEBUG_LOG_EVERY_N = 512
 _DEBUG_LOG_SLOW_SECS = 0.05
+_DEBUG_TIMING_ENV_VAR = 'TIMESEAD_DEBUG_TIMING'
+_DEBUG_TIMING_TRUE_VALUES = frozenset({'1', 'true', 'yes', 'on', 'debug'})
 _stage_call_counts = collections.Counter()
 _configured_logging_pids = set()
 
@@ -71,9 +73,16 @@ def _format_extra(extra: Any) -> str:
     return ' ' + ' '.join(f'{key}={value}' for key, value in extra.items())
 
 
+def _debug_timing_env_enabled() -> bool:
+    return os.getenv(_DEBUG_TIMING_ENV_VAR, '').strip().lower() in _DEBUG_TIMING_TRUE_VALUES
+
+
 def _ensure_process_logging(log_level: int) -> None:
     pid = os.getpid()
     if pid in _configured_logging_pids:
+        root_logger = logging.getLogger()
+        if root_logger.getEffectiveLevel() > log_level:
+            root_logger.setLevel(log_level)
         return
 
     root_logger = logging.getLogger()
@@ -82,8 +91,31 @@ def _ensure_process_logging(log_level: int) -> None:
             level=log_level,
             format='%(asctime)s %(levelname)s %(name)s %(message)s',
         )
+    elif root_logger.getEffectiveLevel() > log_level:
+        root_logger.setLevel(log_level)
 
     _configured_logging_pids.add(pid)
+
+
+def _ensure_logger_level(logger: logging.Logger, log_level: int) -> None:
+    if logger.getEffectiveLevel() > log_level:
+        logger.setLevel(log_level)
+
+
+def debug_timing_enabled(
+    logger: logging.Logger,
+    *,
+    log_level: int = logging.DEBUG,
+    initialize_logging: bool = False,
+) -> bool:
+    if not _debug_timing_env_enabled():
+        return False
+
+    if initialize_logging:
+        _ensure_process_logging(log_level)
+        _ensure_logger_level(logger, log_level)
+
+    return logger.isEnabledFor(log_level)
 
 
 def run_with_debug_timing(
@@ -99,10 +131,7 @@ def run_with_debug_timing(
     log_level: int = logging.DEBUG,
     initialize_logging: bool = False,
 ) -> Any:
-    if initialize_logging:
-        _ensure_process_logging(log_level)
-
-    if not logger.isEnabledFor(log_level):
+    if not debug_timing_enabled(logger, log_level=log_level, initialize_logging=initialize_logging):
         return fn()
 
     call_idx = _next_stage_call_idx(stage)

@@ -76,21 +76,16 @@ class PipelineDataset(BaseTSDataset):
             lambda: self.sink_transform.get_datapoint(item),
             index_label='item_idx',
             index_value=item,
-            log_level=logging.INFO,
             initialize_logging=True,
         )
 
     def __getitem__(self, item) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
-        if not _logger.isEnabledFor(logging.DEBUG):
-            return self.sink_transform.get_datapoint(item)
-
         return run_with_debug_timing(
             _logger,
             'PipelineDataset.__getitem__',
             lambda: self.get_datapoint(item),
             index_label='item_idx',
             index_value=item,
-            log_level=logging.INFO,
             initialize_logging=True,
         )
 

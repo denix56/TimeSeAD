@@ -26,7 +26,7 @@ def _run_transform_input_with_debug(
     tensor: torch.Tensor,
 ) -> torch.Tensor:
     transform_name = type(transform).__name__
-    if transform_name not in _TARGETED_DEBUG_TRANSFORMS or not _logger.isEnabledFor(logging.DEBUG):
+    if transform_name not in _TARGETED_DEBUG_TRANSFORMS:
         return transform._transform_input(tensor)
 
     return run_with_debug_timing(
@@ -37,6 +37,7 @@ def _run_transform_input_with_debug(
         index_value=item,
         input_value=tensor,
         extra={'input_idx': input_idx},
+        initialize_logging=True,
     )
 
 
@@ -204,7 +205,7 @@ class _BaseInputTransform(Transform):
     def _get_datapoint_impl(self, item: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
         transform_name = type(self).__name__
 
-        if transform_name not in _TARGETED_DEBUG_TRANSFORMS or not _logger.isEnabledFor(logging.DEBUG):
+        if transform_name not in _TARGETED_DEBUG_TRANSFORMS:
             return self._fetch_datapoint(item)
 
         return run_with_debug_timing(
@@ -213,6 +214,7 @@ class _BaseInputTransform(Transform):
             lambda: self._fetch_datapoint(item),
             index_label='item_idx',
             index_value=item,
+            initialize_logging=True,
         )
 
 
