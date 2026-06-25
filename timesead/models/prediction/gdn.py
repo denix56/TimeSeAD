@@ -275,6 +275,10 @@ class GDN(BaseModel):
         self.node_embedding = None
         self.topk = topk
         self.learned_graph = None
+        # Cached kNN graph for inference (embeddings frozen in eval); invalidated
+        # whenever a training forward runs. Not a buffer/parameter: it is fully
+        # recomputable and must not enter the state_dict.
+        self._cached_gated_edge_index = None
 
         self.out_layer = OutLayer(dim * edge_set_num, out_layer_hidden_dims)
 
@@ -300,9 +304,19 @@ class GDN(BaseModel):
 
         node_indices = torch.arange(node_num, device=device)
         all_embeddings = self.embedding(node_indices)
-        weights_arr = all_embeddings.detach()
 
-        gated_edge_index = torch.ops.knn_lib.knn_graph(weights_arr, self.topk)
+        # The kNN graph is a pure function of the detached node embeddings. During
+        # training they change every step; at inference they are frozen, so the graph
+        # is identical across every scored batch — build it once and cache it,
+        # rebuilding only while in training mode.
+        if self.training:
+            self._cached_gated_edge_index = None
+            gated_edge_index = torch.ops.knn_lib.knn_graph(all_embeddings.detach(), self.topk)
+        elif self._cached_gated_edge_index is None:
+            gated_edge_index = torch.ops.knn_lib.knn_graph(all_embeddings.detach(), self.topk)
+            self._cached_gated_edge_index = gated_edge_index
+        else:
+            gated_edge_index = self._cached_gated_edge_index
         self.learned_graph = gated_edge_index[0].view(-1, self.topk)
 
         gcn_outs = []
@@ -325,8 +339,9 @@ class GDN(BaseModel):
         x = torch.cat(gcn_outs, dim=1)
         x = x.view(batch_num, node_num, -1)
 
-        indexes = torch.arange(0, node_num).to(device)
-        out = torch.mul(x, self.embedding(indexes))
+        # `all_embeddings` already is `self.embedding(arange(node_num))`; reuse it
+        # instead of rebuilding the same index tensor and re-running the lookup.
+        out = torch.mul(x, all_embeddings)
 
         out = out.permute(0, 2, 1)
         out = F.relu(self.bn_outlayer_in(out))

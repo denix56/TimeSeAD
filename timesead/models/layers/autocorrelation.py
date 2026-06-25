@@ -95,22 +95,23 @@ class AutoCorrelation(nn.Module):
         head = values.shape[1]
         channel = values.shape[2]
         length = values.shape[3]
-        # index init
-        init_index = torch.arange(length).unsqueeze(0).unsqueeze(0).unsqueeze(0).repeat(batch, head, channel, 1).to(values.device)
-        # find top k
+        # find top k (per-sample delays, batch-normalization style)
         top_k = int(self.factor * math.log(length))
         mean_value = torch.mean(torch.mean(corr, dim=1), dim=1)
-        weights, delay = torch.topk(mean_value, top_k, dim=-1)
-        # update corr
-        tmp_corr = torch.softmax(weights, dim=-1)
-        # aggregation
-        tmp_values = values.repeat(1, 1, 1, 2)
-        delays_agg = torch.zeros_like(values).float()
-        for i in range(top_k):
-            tmp_delay = init_index + delay[:, i].unsqueeze(1).unsqueeze(1).unsqueeze(1).repeat(1, head, channel, length)
-            pattern = torch.gather(tmp_values, dim=-1, index=tmp_delay)
-            delays_agg = delays_agg + pattern * \
-                         (tmp_corr[:, i].unsqueeze(1).unsqueeze(1).unsqueeze(1).repeat(1, head, channel, length))
+        weights, delay = torch.topk(mean_value, top_k, dim=-1)  # (B, top_k)
+        tmp_corr = torch.softmax(weights, dim=-1)               # (B, top_k)
+        # Vectorized circular time-delay aggregation. Equivalent to the per-delay
+        # Python loop that gathers from a 2x-tiled `values` at index (j + delay):
+        # gathering at (j + delay) mod length from `values` itself yields the same
+        # values without the loop, the 2x `repeat` copy, or the per-iteration
+        # `init_index`/`tmp_corr` `repeat` materializations. All top_k shifts are
+        # gathered at once and weighted-summed over the top_k axis.
+        base = torch.arange(length, device=values.device)
+        pos = (base.view(1, 1, length) + delay.unsqueeze(-1)) % length  # (B, top_k, L)
+        pos = pos.view(batch, 1, 1, top_k, length).expand(batch, head, channel, top_k, length)
+        values_e = values.unsqueeze(3).expand(batch, head, channel, top_k, length)
+        rolled = torch.gather(values_e, dim=-1, index=pos)
+        delays_agg = (rolled.float() * tmp_corr.view(batch, 1, 1, top_k, 1)).sum(dim=3)
         return delays_agg
 
     def time_delay_agg_full(self, values, corr):
