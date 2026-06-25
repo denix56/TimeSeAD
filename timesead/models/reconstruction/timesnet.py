@@ -56,9 +56,17 @@ class TimesBlock(nn.Module):
         torch._check(T == self.seq_len, f"{T} != {self.seq_len}")
         periods, period_weight = FFT_for_Period(x, self.top_k)
 
+        # In eager mode read all top_k periods to the host in a single D2H copy
+        # instead of one blocking `.item()` sync per iteration. Under
+        # torch.compile keep the per-period `.item()` so Dynamo's unbacked-symint
+        # path (capture_scalar_outputs + the torch._check_is_size below) is
+        # preserved unchanged.
+        compile_mode = is_compile_mode()
+        period_list = None if compile_mode else periods.tolist()
+
         res = []
         for i in range(self.top_k):
-            period = periods[i].item()
+            period = periods[i].item() if compile_mode else period_list[i]
             torch._check_is_size(period, f"Period {period} should be [0, {T}]", max=T)
             out = F.pad(x, (0, (-self.seq_len) % period))
             torch._check(out.shape[-1] % period == 0)

@@ -24,8 +24,10 @@ class InceptionBlockV1(nn.Module):
                     nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
-        res_list = []
-        for i in range(self.num_kernels):
-            res_list.append(self.kernels[i](x))
-        res = torch.stack(res_list, dim=-1).mean(-1)
-        return res
+        # Accumulate into a running sum instead of stacking every kernel output
+        # and reducing. mean == sum / num_kernels, but this avoids materializing
+        # the (num_kernels x) stacked activation, cutting peak memory.
+        res = self.kernels[0](x)
+        for i in range(1, self.num_kernels):
+            res = res + self.kernels[i](x)
+        return res / self.num_kernels
