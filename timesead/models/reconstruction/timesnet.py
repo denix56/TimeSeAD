@@ -49,6 +49,11 @@ class TimesBlock(nn.Module):
             nn.GELU(),
             InceptionBlockV1(d_ff, d_model, num_kernels=num_kernels)
         )
+        # Hold the Inception conv weights in NHWC so cuDNN runs the convs
+        # channels-last: it picks faster kernels (notably for the bf16 tensor-core
+        # path) and skips the NCHW<->NHWC layout conversions seen in profiling.
+        # Memory-format change only (output differs at fp rounding ~1e-5).
+        self.conv = self.conv.to(memory_format=torch.channels_last)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, T, N = x.size()
@@ -71,8 +76,8 @@ class TimesBlock(nn.Module):
             out = F.pad(x, (0, (-self.seq_len) % period))
             torch._check(out.shape[-1] % period == 0)
             out = out.unflatten(-1, (-1, period))
-            # 2D conv: from 1d Variation to 2d Variation
-            out = self.conv(out)
+            # 2D conv: from 1d Variation to 2d Variation (channels-last input)
+            out = self.conv(out.contiguous(memory_format=torch.channels_last))
             # reshape back
             res.append(out.flatten(-2)[..., :self.seq_len])
         res = torch.stack(res, dim=0)
