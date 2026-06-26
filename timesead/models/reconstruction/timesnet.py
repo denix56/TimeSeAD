@@ -69,22 +69,39 @@ class TimesBlock(nn.Module):
         compile_mode = is_compile_mode()
         period_list = None if compile_mode else periods.tolist()
 
-        res = []
+        # Fold each Inception block's parallel convs into a single equivalent conv ONCE,
+        # before the period loop. self.conv is otherwise applied top_k times per forward
+        # with identical weights, so this folds 2x instead of 2*top_k times -- the win
+        # is largest on the bf16 training path, where the per-period refolds are
+        # launch-bound. The folded kernels are reused across the loop within this
+        # forward; in training the fold is differentiable and the gradient accumulates
+        # correctly through the top_k reuses.
+        inc1, act, inc2 = self.conv[0], self.conv[1], self.conv[2]
+        w1, b1, p1 = inc1.folded_kernel()
+        w2, b2, p2 = inc2.folded_kernel()
+
+        # Softmax the FFT period weights up front so each period's output can be folded
+        # into a running weighted sum, instead of stacking all top_k of them and then
+        # reducing (which holds ~2*top_k full [B, C, T] tensors at peak).
+        period_weight = F.softmax(period_weight, dim=1)
+
+        res = None
         for i in range(self.top_k):
             period = periods[i].item() if compile_mode else period_list[i]
             torch._check_is_size(period, f"Period {period} should be [0, {T}]", max=T)
             out = F.pad(x, (0, (-self.seq_len) % period))
             torch._check(out.shape[-1] % period == 0)
             out = out.unflatten(-1, (-1, period))
-            # 2D conv: from 1d Variation to 2d Variation (channels-last input)
-            out = self.conv(out.contiguous(memory_format=torch.channels_last))
-            # reshape back
-            res.append(out.flatten(-2)[..., :self.seq_len])
-        res = torch.stack(res, dim=0)
-        # adaptive aggregation
-        period_weight = F.softmax(period_weight, dim=1)
-        period_weight = period_weight.mT[..., None, None]
-        res = torch.sum(res * period_weight, 0)
+            # 2D conv: from 1d Variation to 2d Variation (channels-last input). Apply the
+            # pre-folded kernels directly so they are not refolded once per period.
+            out = out.contiguous(memory_format=torch.channels_last)
+            out = F.conv2d(out, w1, b1, padding=p1)
+            out = act(out)
+            out = F.conv2d(out, w2, b2, padding=p2)
+            # reshape back, weight by this period's amplitude, accumulate
+            out = out.flatten(-2)[..., :self.seq_len]
+            term = out * period_weight[:, i].view(B, 1, 1)
+            res = term if res is None else res + term
         # residual connection
         res = res + x
         return res.mT.contiguous()
