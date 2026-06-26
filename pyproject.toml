@@ -34,7 +34,7 @@ dependencies = [
   "torchvision>=0.2.2",
   "torch-geometric",
   "opt_einsum",
-  "hmmlearn>=0.3.3",
+  "pomegranate>=1.1.0",  # GPU-capable HMM/GMM-HMM backend (replaces hmmlearn)
   #"torch-cluster @ git+https://github.com/rusty1s/pytorch_cluster.git", # build separately
   "pyreadr",
   "pyod",
