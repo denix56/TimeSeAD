@@ -217,6 +217,18 @@ class AutoCorrelationLayer(nn.Module):
         _, S, _ = keys.shape
         H = self.n_heads
 
+        if getattr(self.inner_correlation, "uses_only_query", False):
+            # The inner module (e.g. FourierBlock) consumes only the query; the key
+            # and value projections (2/3 of the fused qkv GEMM) are dead. Compute
+            # just the Q-slice of the fused weight -- bit-identical to the full
+            # split's q_out, since that slice is column-independent of k/v.
+            q_w, _, _ = self._split_qkv_weights()
+            q_b = self._split_qkv_biases()[0]
+            queries = F.linear(queries, q_w, q_b).view(B, L, H, -1)
+            out, attn = self.inner_correlation(queries, None, None, attn_mask)
+            out = out.view(B, L, -1)
+            return self.out_projection(out), attn
+
         if queries is keys and queries is values:
             q_out, k_out, v_out = self._project_shared_qkv(queries)
         else:

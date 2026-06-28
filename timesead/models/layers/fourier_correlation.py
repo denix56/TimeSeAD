@@ -49,6 +49,10 @@ class FourierBlock(nn.Module):
       - If lrfop=False, weights are sized to max(len(index), topk) to avoid einsum K mismatch.
     """
 
+    # forward() consumes only the query (k/v/mask are ignored), so a wrapping
+    # AutoCorrelationLayer can skip the dead key/value projections (bit-identical).
+    uses_only_query = True
+
     def __init__(
         self,
         in_channels: int,
